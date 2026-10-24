@@ -92,7 +92,7 @@ void WingmanProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::MidiB
             for (int i = 0; i < count; ++i) {
                 const double sourcePosition = (seconds + i / engineRate) * clip.sampleRate;
                 for (int ch = 0; ch < audio.getNumChannels(); ++ch)
-                    audio.addSample(ch, i, wingman::interpolate(clip, ch, sourcePosition) * track.gain);
+                    audio.addSample(ch, i, wingman::interpolate(clip, ch, sourcePosition) * track.gain * wingman::balanceGain(track.pan,ch));
             }
         }
         if (generated && !chords.empty()) {
@@ -133,6 +133,14 @@ void WingmanProcessor::setTrackMix(int i, float gain, bool mute, bool solo) {
     auto& t = tracks[static_cast<std::size_t>(i)];
     t.gain = std::isfinite(gain) ? juce::jlimit(0.0f,1.0f,gain) : 0; t.mute = mute; t.solo = solo;
 }
+void WingmanProcessor::setTrackPan(int i, float pan) {
+    if (!validTrack(i) || !std::isfinite(pan)) return;
+    const juce::ScopedLock lock(mutex); tracks[static_cast<std::size_t>(i)].pan = juce::jlimit(-1.0f,1.0f,pan);
+}
+void WingmanProcessor::setEditorSize(int width, int height) {
+    const juce::ScopedLock lock(mutex); editorWidth = juce::jlimit(960,1920,width); editorHeight = juce::jlimit(608,1216,height);
+}
+std::pair<int,int> WingmanProcessor::editorSize() const { const juce::ScopedLock lock(mutex); return {editorWidth,editorHeight}; }
 juce::Result WingmanProcessor::importWav(int i, const juce::File& file) {
     if (!validTrack(i)) return juce::Result::fail("Invalid track");
     juce::WavAudioFormat format;
@@ -240,7 +248,7 @@ juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
             const int n = static_cast<int>(std::min<juce::int64>(1024,total-pos)); block.clear();
             for (const auto& t : snapshot) if (t.clip && !t.mute && (!solo || t.solo))
                 for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < n; ++i)
-                    block.addSample(ch,i,wingman::interpolate(*t.clip,ch,(pos+i)*t.clip->sampleRate/48000.0)*t.gain);
+                    block.addSample(ch,i,wingman::interpolate(*t.clip,ch,(pos+i)*t.clip->sampleRate/48000.0)*t.gain*wingman::balanceGain(t.pan,ch));
             // Saturate PCM mixdown instead of wrapping on overload.
             for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < n; ++i) block.setSample(ch,i,juce::jlimit(-1.0f,1.0f,block.getSample(ch,i)));
             if (!writer->writeFromAudioSampleBuffer(block,0,n)) return juce::Result::fail("WAV write failed");
@@ -252,11 +260,12 @@ juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
 void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
     juce::ValueTree state("Wingman");
     const juce::ScopedLock lock(mutex);
+    state.setProperty("width",editorWidth,nullptr); state.setProperty("height",editorHeight,nullptr);
     state.setProperty("version",1,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
     state.setProperty("chords",chordText,nullptr); state.setProperty("generated",generated,nullptr); state.setProperty("preview",previewEnabled,nullptr);
     for (const auto& t : tracks) {
         juce::ValueTree node("Track");
-        node.setProperty("gain",t.gain,nullptr); node.setProperty("mute",t.mute,nullptr); node.setProperty("solo",t.solo,nullptr);
+        node.setProperty("pan",t.pan,nullptr); node.setProperty("gain",t.gain,nullptr); node.setProperty("mute",t.mute,nullptr); node.setProperty("solo",t.solo,nullptr);
         if (t.clip) {
             node.setProperty("name",t.clip->name,nullptr); node.setProperty("rate",t.clip->sampleRate,nullptr);
             node.setProperty("samples",t.clip->audio.getNumSamples(),nullptr);
@@ -276,7 +285,8 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
     for (int i = 0; i < 4; ++i) {
         auto node = state.getChild(i); auto& t = restored[static_cast<std::size_t>(i)];
         float gain = node["gain"]; if (!std::isfinite(gain)) return;
-        t.gain = juce::jlimit(0.0f,1.0f,gain); t.mute = node["mute"]; t.solo = node["solo"];
+        const float pan = node.getProperty("pan",0.0); if (!std::isfinite(pan)) return;
+        t.pan = juce::jlimit(-1.0f,1.0f,pan); t.gain = juce::jlimit(0.0f,1.0f,gain); t.mute = node["mute"]; t.solo = node["solo"];
         if (node.hasProperty("samples")) {
             const int n = node["samples"]; const double rate = node["rate"];
             if (!std::isfinite(rate) || rate < 8000 || rate > 192000 || n <= 0 || n > rate*maxClipSeconds) return;
@@ -294,6 +304,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
     if (!std::isfinite(restoredBpm)) return;
     const juce::ScopedLock lock(mutex);
     if (setProgression(state["chords"].toString()).failed()) return;
+    setEditorSize(state.getProperty("width",1200),state.getProperty("height",760));
     tracks = std::move(restored); bpm = juce::jlimit(40.0,240.0,restoredBpm); transpose = juce::jlimit(0,11,static_cast<int>(state["key"]));
     generated = state["generated"]; previewEnabled = state["preview"]; playing = recording = false; rebuildMidi();
 }

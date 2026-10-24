@@ -99,6 +99,13 @@ int main() {
         check(resample.exportWav(directory.getChildFile("muted.wav")).failed(),"muted mix rejected");
         check(resample.exportWav(directory.getChildFile("muted-stem.wav"),0).wasOk(),"individual export ignores mute");
         check(wingman::interpolate(*clip,0,1.0e30)==0,"out-of-range interpolation is silent");
+        p.stop(); p.setTrackMix(0,0.5f,false,false); p.setTrackMix(2,0,false,false); p.setPreview(false); p.setTrackPan(0,1); p.play();
+        midi.clear(); p.processBlock(block,midi);
+        check(block.getSample(0,100)==0 && std::abs(block.getSample(1,100)-0.125f)<0.00001f,"stereo balance routes right");
+        p.setEditorSize(1440,912); juce::MemoryBlock extendedState; p.getStateInformation(extendedState);
+        restored.setStateInformation(extendedState.getData(),static_cast<int>(extendedState.getSize()));
+        check(restored.trackSnapshot(0).pan == 1 && restored.editorSize() == std::pair<int,int>{1440,912},"persist pan and editor dimensions");
+        p.setEditorSize(1200,760);
         // Optional reproducible visual fixture, never loaded by the application itself.
         if (std::getenv("WINGMAN_SCREENSHOT")) {
             for (int lane = 0; lane < 4; ++lane) {

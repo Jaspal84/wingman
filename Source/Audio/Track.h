@@ -11,8 +11,9 @@ struct Clip {
 struct Track {
     std::shared_ptr<const Clip> clip;
     bool mute = false, solo = false;
-    float gain = 0.8f;
+    float gain = 0.8f, pan = 0.0f;
 };
+inline float balanceGain(float pan, int channel) { return channel == 0 ? (pan > 0 ? 1-pan : 1) : (pan < 0 ? 1+pan : 1); }
 inline float interpolate(const Clip& clip, int channel, double position) {
     if (!std::isfinite(position) || position < 0 || position >= clip.audio.getNumSamples()) return 0;
     const int i = static_cast<int>(position);

@@ -44,6 +44,9 @@ public:
     double positionSeconds() const;
     wingman::Track trackSnapshot(int) const;
     void setTrackMix(int, float, bool, bool);
+    void setTrackPan(int, float);
+    void setEditorSize(int, int);
+    std::pair<int,int> editorSize() const;
     juce::Result beginRecording(int);
     juce::Result finishRecording();
     bool isRecording() const;
@@ -53,7 +56,7 @@ private:
     mutable juce::CriticalSection mutex;
     std::array<wingman::Track,4> tracks;
     double engineRate = 44100, bpm = 120, seconds = 0;
-    int transpose = 0;
+    int transpose = 0, editorWidth = 1200, editorHeight = 760;
     bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;
     std::vector<wingman::Chord> chords;
     juce::String chordText = "C Am F G";

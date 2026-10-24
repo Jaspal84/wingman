@@ -19,7 +19,9 @@ private:
     juce::TextButton apply{"Apply chords"}, generate{"Generate MIDI"}, exportMix{"Export WAV mix"}, exportMidi{"Export MIDI"};
     juce::ToggleButton preview{"Audition chords"};
     std::array<juce::TextButton,4> imports, solos, mutes, stemExports;
-    std::array<juce::Slider,4> volumes;
+    std::array<juce::Slider,4> volumes, pans;
+    juce::TextButton models{"Model Manager"};
+    float uiScale = 1;
     std::array<juce::Rectangle<int>,4> waveformBounds;
     juce::Rectangle<int> chordBounds, midiBounds;
     std::array<std::shared_ptr<const wingman::Clip>,4> cachedClips;

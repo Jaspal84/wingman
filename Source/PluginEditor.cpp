@@ -1,16 +1,23 @@
 #include "PluginEditor.h"
 namespace {
-const std::array<juce::String,4> names{"Vocals", "Instruments", "Bass", "Drums"};
+const std::array<juce::String,4> names{"Vocals", "Other", "Bass", "Drums"};
 const juce::StringArray keyNames{"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 }
 WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), processor(p) {
     setLookAndFeel(&theme);
-    setSize(1200,760);
+    const auto size = processor.editorSize();
+    setResizable(true,false); setResizeLimits(960,608,1920,1216);
+    setSize(size.first,size.second);
+    addAndMakeVisible(models);
+    models.onClick = [] {
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"Model Manager",
+            "HTDemucs 4-stem model: not configured.\nAI separation is unavailable until verified weights and the pinned Python worker are installed.\n\nNo model is downloaded automatically. See Models/README.md for installation, license and checksums.","Close");
+    };
     for (auto* component : std::initializer_list<juce::Component*>{&record,&playButton,&stopButton,&keyBox,&recordTarget,&bpm,&status,&chordInput,&apply,&generate,&exportMix,&exportMidi,&preview,&ideas}) addAndMakeVisible(component);
     keyBox.addItemList(keyNames,1);
     keyBox.setTooltip("Transpose the written chord progression by this many semitones from C");
     keyBox.onChange = [this] { processor.setKey(keyBox.getSelectedId()-1); };
-    recordTarget.addItemList({"Vocals", "Instruments", "Bass", "Drums"},1); recordTarget.setSelectedId(1);
+    recordTarget.addItemList({"Vocals", "Other", "Bass", "Drums"},1); recordTarget.setSelectedId(1);
     bpm.setRange(40,240,0.1); bpm.setSliderStyle(juce::Slider::IncDecButtons);
     bpm.setTextBoxStyle(juce::Slider::TextBoxLeft,false,65,28);
     bpm.onValueChange = [this] { processor.setTempo(bpm.getValue()); };
@@ -28,7 +35,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     };
     for (int i = 0; i < 4; ++i) {
         const auto n = static_cast<std::size_t>(i);
-        for (auto* c : std::initializer_list<juce::Component*>{&imports[n],&solos[n],&mutes[n],&volumes[n],&stemExports[n]}) addAndMakeVisible(c);
+        for (auto* c : std::initializer_list<juce::Component*>{&imports[n],&solos[n],&mutes[n],&volumes[n],&pans[n],&stemExports[n]}) addAndMakeVisible(c);
         imports[n].setButtonText("Import WAV"); imports[n].onClick = [this,i] { importTrack(i); };
         solos[n].setButtonText("S"); mutes[n].setButtonText("M");
         solos[n].setClickingTogglesState(true); mutes[n].setClickingTogglesState(true);
@@ -37,6 +44,10 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
         volumes[n].setRange(0,1,0.001); volumes[n].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         volumes[n].setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
         volumes[n].setTooltip("Track volume, 0-100%"); volumes[n].onValueChange = [this,i] { updateMix(i); };
+        pans[n].setRange(-1,1,0.01); pans[n].setSliderStyle(juce::Slider::LinearHorizontal);
+        pans[n].setTextBoxStyle(juce::Slider::NoTextBox,false,0,0); pans[n].setTooltip("Stereo balance: left / centre / right");
+        pans[n].setName(names[n]+" stereo balance"); pans[n].setDoubleClickReturnValue(true,0);
+        pans[n].onValueChange = [this,i,n] { processor.setTrackPan(i,static_cast<float>(pans[n].getValue())); };
         stemExports[n].setButtonText("Export " + names[n]); stemExports[n].onClick = [this,i] { chooseExport(false,i); };
     }
     chordInput.setMultiLine(false); chordInput.setText(processor.progression());
@@ -105,6 +116,7 @@ void WingmanEditor::refresh() {
     bool changed = false;
     for (int i = 0; i < 4; ++i) {
         const auto n = static_cast<std::size_t>(i); const auto t = processor.trackSnapshot(i);
+        pans[n].setValue(t.pan,juce::dontSendNotification);
         volumes[n].setValue(t.gain,juce::dontSendNotification); mutes[n].setToggleState(t.mute,juce::dontSendNotification);
         solos[n].setToggleState(t.solo,juce::dontSendNotification);
         if (cachedClips[n] != t.clip) { cachedClips[n] = t.clip; changed = true; }
@@ -138,13 +150,16 @@ void WingmanEditor::rebuildWaveform(int i) {
     }
 }
 void WingmanEditor::resized() {
+    uiScale = std::min(getWidth()/1200.0f,getHeight()/760.0f);
+    processor.setEditorSize(getWidth(),getHeight());
+    models.setBounds(942,24,222,34);
     record.setBounds(206,24,142,34); recordTarget.setBounds(354,24,118,34);
     keyBox.setBounds(493,27,72,30); bpm.setBounds(581,27,120,30);
     playButton.setBounds(719,24,68,34); stopButton.setBounds(795,24,68,34);
     for (int i = 0; i < 4; ++i) {
-        const auto n = static_cast<std::size_t>(i); const int y = 131+i*84;
+        const auto n = static_cast<std::size_t>(i); const std::array<int,4> row{0,3,2,1}; const int y = 131+row[n]*84;
         imports[n].setBounds(28,y+32,100,24); solos[n].setBounds(142,y+14,32,28);
-        mutes[n].setBounds(180,y+14,32,28); volumes[n].setBounds(218,y+4,47,47);
+        mutes[n].setBounds(180,y+14,32,28); pans[n].setBounds(142,y+47,125,18); volumes[n].setBounds(218,y+4,47,47);
         waveformBounds[n] = {282,y+4,598,59}; stemExports[n].setBounds(912,y+19,252,31); rebuildWaveform(i);
     }
     ideas.setBounds(124,499,240,32); chordInput.setBounds(28,552,594,34); apply.setBounds(638,552,126,34);
@@ -152,14 +167,16 @@ void WingmanEditor::resized() {
     generate.setBounds(912,644,252,32); preview.setBounds(912,680,160,28);
     exportMidi.setBounds(1044,499,120,32); exportMix.setBounds(912,455,252,30);
     status.setBounds(24,720,1152,28);
+    for (auto* child : getChildren()) child->setTransform(juce::AffineTransform::scale(uiScale));
 }
 void WingmanEditor::paint(juce::Graphics& g) {
     g.fillAll(wingman::background);
+    g.addTransform(juce::AffineTransform::scale(uiScale));
     g.setColour(wingman::panel); g.fillRoundedRectangle(12,12,1176,65,12);
-    g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(27.0f,juce::Font::bold)); g.drawText("WINGMAN",28,26,174,29,juce::Justification::centredLeft);
+    g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(21.0f,juce::Font::bold)); g.drawText("WINGMAN PRO",28,26,174,29,juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(11.0f)); g.setColour(juce::Colours::lightgrey);
     g.drawText("KEY",493,11,72,15,juce::Justification::centredLeft); g.drawText("BPM",581,11,70,15,juce::Justification::centredLeft);
-    g.drawText("AUDIO + MIDI WORKSPACE",904,30,260,22,juce::Justification::centredRight);
+
     g.setColour(wingman::panel); g.fillRoundedRectangle(12,92,1176,399,14); g.fillRoundedRectangle(12,493,1176,216,14);
     g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(15.0f,juce::Font::bold));
     g.drawText("INPUT TRACKS",28,101,210,23,juce::Justification::centredLeft);
