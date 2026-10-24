@@ -10,6 +10,7 @@ cmake -S . -B build-macos -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 "$@"
 cmake --build build-macos --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-4}"
 ctest --test-dir build-macos --output-on-failure
-printf 'Builds: build-macos/Wingman_artefacts/Release/{AU,VST3,Standalone}\n'
-printf 'After installing the AU into ~/Library/Audio/Plug-Ins/Components, run:\n'
-printf 'auval -v aufx Wgm1 Wgma\n'
+printf 'Builds are under build-macos/Wingman_artefacts/Release/\n'
+printf 'Install and validate the actual compiled AU identifiers:\n'
+printf './Scripts/install-macos.sh "build-macos/Wingman_artefacts/Release/AU/Wingman Pro.component" --adhoc\n'
+printf './Scripts/validate-au.sh "$HOME/Library/Audio/Plug-Ins/Components/Wingman Pro.component"\n'

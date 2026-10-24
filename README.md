@@ -1,4 +1,4 @@
-# Wingman
+# Wingman Pro
 
 A C++20 / JUCE 8 audio workspace for four imported or recorded tracks and editable chord MIDI. Phase 1 implements local audio and MIDI processing; it does **not** implement an AI model or stem separation. Track names describe user-supplied audio, not automatically separated sources.
 
@@ -28,10 +28,11 @@ Install Xcode Command Line Tools and CMake, then run:
 
 Outputs are under `build-macos/Wingman_artefacts/Release/`: AU, VST3 and Standalone. The script defaults to `arm64` and macOS 11+. Set `WINGMAN_ARCHS='arm64;x86_64'` for a universal build when the toolchain supports it. Additional CMake options can be passed to the script. Plugins are not automatically installed into system folders.
 
-After manually installing `Wingman.component` in `~/Library/Audio/Plug-Ins/Components`, validate with:
+Install a development copy and validate using the actual compiled identifiers:
 
 ```sh
-auval -v aufx Wgm1 Wgma
+./Scripts/install-macos.sh "build-macos/Wingman_artefacts/Release/AU/Wingman Pro.component" --adhoc
+./Scripts/validate-au.sh "$HOME/Library/Audio/Plug-Ins/Components/Wingman Pro.component"
 ```
 
 **macOS-only checks still required:** AU build and validation, microphone permissions, CoreAudio hardware capture/playback, Logic Pro and MainStage loading, host state restoration and MIDI routing. These have not been tested in the Linux development environment. Signing/notarization and distribution packaging are not configured.
@@ -50,7 +51,7 @@ cmake --build build --parallel 2
 ctest --test-dir build --output-on-failure
 ```
 
-Linux builds VST3 and Standalone. For headless editor rendering tests use `xvfb-run -a ctest --test-dir build --output-on-failure` (requires `xvfb` and `xauth`). The standalone is `build/Wingman_artefacts/Debug/Standalone/Wingman`. A real audio device is needed for audible playback and recording; the tests exercise actual processor buffers and file I/O without hardware.
+Linux builds VST3 and Standalone. For headless editor rendering tests use `xvfb-run -a ctest --test-dir build --output-on-failure` (requires `xvfb` and `xauth`). The standalone is `build/Wingman_artefacts/Debug/Standalone/Wingman Pro`. A real audio device is needed for audible playback and recording; the tests exercise actual processor buffers and file I/O without hardware.
 
 A JUCE-free portable DSP-only build is also available:
 
@@ -91,3 +92,5 @@ Validated on Debian 13 / GCC 14.2 with JUCE 8.0.6, CMake and Ninja:
 - macOS AU/VST3/Standalone builds, `auval`, Logic Pro and MainStage integration remain unrun.
 
 `Scripts/build-linux.sh` builds and runs the Linux suites. Set `WINGMAN_TRACE_TESTS=1` for per-check diagnostics, or `WINGMAN_SCREENSHOT=/absolute/path/ui.png` to render an editor screenshot using generated WAV test fixtures (never application demo data).
+
+The original `aufx` validation example did not match JUCE's MIDI-capable Music Effect default (`aumf`). This category is now explicit. See [AU validation](Documentation/AU-VALIDATION.md) and the [audit and implementation plan](Documentation/IMPLEMENTATION.md). Installation/metadata tooling is tested on Linux fixtures; actual macOS validation is still pending.

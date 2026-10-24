@@ -3,3 +3,6 @@
 .DS_Store
 *.user
 *.jucer
+
+__pycache__/
+*.py[cod]

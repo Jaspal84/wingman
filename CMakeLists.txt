@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
-project(Wingman VERSION 0.1.0 LANGUAGES C CXX)
+project(Wingman VERSION 0.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 include(CTest)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+  add_test(NAME au_metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Tests/test_au_metadata.py)
+endif()
 option(WINGMAN_BUILD_PLUGIN "Build JUCE plugin and standalone" ON)
 add_library(wingman_dsp INTERFACE)
 target_include_directories(wingman_dsp INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
@@ -29,7 +33,7 @@ if(WINGMAN_BUILD_PLUGIN)
   endif()
   juce_add_plugin(Wingman COMPANY_NAME "Wingman Audio" BUNDLE_ID "com.wingmanaudio.wingman"
     PLUGIN_MANUFACTURER_CODE Wgma PLUGIN_CODE Wgm1 FORMATS ${WINGMAN_FORMATS}
-    PRODUCT_NAME "Wingman" IS_SYNTH FALSE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT TRUE
+    PRODUCT_NAME "Wingman Pro" AU_MAIN_TYPE kAudioUnitType_MusicEffect IS_SYNTH FALSE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE COPY_PLUGIN_AFTER_BUILD FALSE
     MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Record audio into Wingman tracks."
     VST3_CATEGORIES Fx Instrument)
