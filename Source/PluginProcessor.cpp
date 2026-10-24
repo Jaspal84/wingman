@@ -136,7 +136,7 @@ void WingmanProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::MidiB
         if (generated && !chords.empty()) {
             const double startBeat = seconds * bpm / 60.0;
             const double endBeat = (seconds + count / engineRate) * bpm / 60.0;
-            const double length = wingman::progressionBeats(chords);
+            const double length = sequenceLength;
             const auto firstLoop = static_cast<juce::int64>(std::floor(startBeat / length));
             const auto lastLoop = static_cast<juce::int64>(std::floor(endBeat / length));
             for (auto loop = firstLoop; loop <= lastLoop; ++loop)
@@ -159,7 +159,7 @@ bool WingmanProcessor::isPlaying() const { const juce::ScopedLock lock(mutex); r
 double WingmanProcessor::positionSeconds() const { const juce::ScopedLock lock(mutex); return seconds; }
 void WingmanProcessor::setTempo(double value) { const juce::ScopedLock lock(mutex); if (std::isfinite(value)) { bpm = juce::jlimit(40.0,240.0,value); panic = true; seconds = 0; } }
 double WingmanProcessor::tempo() const { const juce::ScopedLock lock(mutex); return bpm; }
-void WingmanProcessor::setKey(int value) { const juce::ScopedLock lock(mutex); transpose = juce::jlimit(0,11,value); rebuildMidi(); }
+void WingmanProcessor::setKey(int value) { const juce::ScopedLock lock(mutex); if (transpose != juce::jlimit(0,11,value)) { for (auto& part : parts) part.clear(); activePart = -1; } transpose = juce::jlimit(0,11,value); rebuildMidi(); }
 int WingmanProcessor::key() const { const juce::ScopedLock lock(mutex); return transpose; }
 void WingmanProcessor::setPreview(bool enabled) { const juce::ScopedLock lock(mutex); previewEnabled = enabled; panic = true; }
 bool WingmanProcessor::preview() const { const juce::ScopedLock lock(mutex); return previewEnabled; }
@@ -218,11 +218,71 @@ juce::Result WingmanProcessor::setProgression(const juce::String& text) {
     }
     if (parsed.empty() || parsed.size() > 128) return juce::Result::fail("Enter 1-128 valid chord tokens");
     const juce::ScopedLock lock(mutex);
+    if (chordText != text.trim()) { for (auto& part : parts) part.clear(); activePart = -1; }
     chords = std::move(parsed); chordText = text.trim(); rebuildMidi();
     return juce::Result::ok();
 }
 juce::String WingmanProcessor::progression() const { const juce::ScopedLock lock(mutex); return chordText; }
-void WingmanProcessor::rebuildMidi() { sequence = wingman::makeChords(chords, transpose); panic = true; seconds = 0; }
+void WingmanProcessor::rebuildMidi() {
+    if (activePart >= 0) { sequence = wingman::patternSequence(parts[static_cast<std::size_t>(activePart)]); sequenceLength = settings[static_cast<std::size_t>(activePart)].bars*4.0; }
+    else { sequence = wingman::makeChords(chords, transpose); sequenceLength = wingman::progressionBeats(chords); }
+    panic = true; seconds = 0;
+}
+void WingmanProcessor::selectPart(int part) { const juce::ScopedLock lock(mutex); activePart = juce::jlimit(-1,2,part); generated = activePart < 0 || !parts[static_cast<std::size_t>(activePart)].empty(); rebuildMidi(); }
+int WingmanProcessor::selectedPart() const { const juce::ScopedLock lock(mutex); return activePart; }
+wingman::PatternSettings WingmanProcessor::partSettings(int part) const { const juce::ScopedLock lock(mutex); return part >= 0 && part < 3 ? settings[static_cast<std::size_t>(part)] : wingman::PatternSettings{}; }
+std::vector<wingman::NoteEvent> WingmanProcessor::partNotes(int part) const { const juce::ScopedLock lock(mutex); return part >= 0 && part < 3 ? parts[static_cast<std::size_t>(part)] : std::vector<wingman::NoteEvent>{}; }
+juce::Result WingmanProcessor::generatePart(int part,const wingman::PatternSettings& config) {
+    if (part < 0 || part > 2) return juce::Result::fail("Invalid part");
+    std::vector<wingman::Chord> harmony; int keyCopy; juce::String text;
+    { const juce::ScopedLock lock(mutex); harmony = chords; keyCopy = transpose; text = chordText; }
+    try {
+        auto notes = wingman::generatePattern(static_cast<wingman::PatternKind>(part),harmony,keyCopy,config);
+        const juce::ScopedLock lock(mutex);
+        if (text != chordText || keyCopy != transpose) return juce::Result::fail("Harmony changed during generation; retry");
+        settings[static_cast<std::size_t>(part)] = config; parts[static_cast<std::size_t>(part)] = std::move(notes);
+        activePart = part; generated = true; rebuildMidi(); return juce::Result::ok();
+    } catch (const std::exception& error) { return juce::Result::fail(error.what()); }
+}
+juce::Result WingmanProcessor::varyPart(int part,int firstBar,int barCount) {
+    if(part<0||part>2) return juce::Result::fail("Invalid part");
+    const juce::ScopedLock lock(mutex);
+    auto& original=parts[static_cast<std::size_t>(part)]; auto config=settings[static_cast<std::size_t>(part)];
+    if(original.empty()||firstBar<0||barCount<1||firstBar+barCount>config.bars) return juce::Result::fail("Generate a part and choose a valid phrase first");
+    try {
+        ++config.variation; auto replacement=wingman::generatePattern(static_cast<wingman::PatternKind>(part),chords,transpose,config);
+        const double begin=firstBar*4.0,end=(firstBar+barCount)*4.0;
+        std::erase_if(original,[&](const auto& note){return note.beat>=begin && note.beat<end;});
+        for(const auto& note:replacement) if(note.beat>=begin && note.beat<end)original.push_back(note);
+        std::stable_sort(original.begin(),original.end(),[](const auto& a,const auto& b){return a.beat<b.beat;});
+        settings[static_cast<std::size_t>(part)]=config; activePart=part; rebuildMidi(); return juce::Result::ok();
+    } catch(const std::exception& error){return juce::Result::fail(error.what());}
+}
+juce::Result WingmanProcessor::toggleDrumStep(int bar,int instrument,int step) {
+    const juce::ScopedLock lock(mutex);
+    if(bar<0||bar>=settings[1].bars||instrument<0||instrument>8||step<0||step>15)return juce::Result::fail("Invalid drum step");
+    const double beat=bar*4+step*0.25; const int note=settings[1].drumMap[static_cast<std::size_t>(instrument)];
+    auto& events=parts[1]; auto found=std::find_if(events.begin(),events.end(),[&](const auto& e){return e.note==note&&std::abs(e.beat-beat)<0.12;});
+    if(found!=events.end())events.erase(found); else events.push_back({beat,0.08,note,settings[1].velocity,10});
+    std::stable_sort(events.begin(),events.end(),[](const auto& a,const auto& b){return a.beat<b.beat;});
+    activePart=1; generated=true; rebuildMidi(); return juce::Result::ok();
+}
+juce::Result WingmanProcessor::editPartNote(int part,int index,const wingman::NoteEvent& note,bool remove) {
+    const juce::ScopedLock lock(mutex);
+    if (part < 0 || part > 2) return juce::Result::fail("Select a generated part");
+    auto& notes = parts[static_cast<std::size_t>(part)];
+    if (index < 0 || index >= static_cast<int>(notes.size())) return juce::Result::fail("Invalid note");
+    if (remove) notes.erase(notes.begin()+index);
+    else {
+        if (!std::isfinite(note.beat) || !std::isfinite(note.duration) || note.beat < 0 || note.duration <= 0
+            || note.beat+note.duration > settings[static_cast<std::size_t>(part)].bars*4 || note.note < 0 || note.note > 127 || note.velocity < 1 || note.velocity > 127)
+            return juce::Result::fail("Invalid MIDI note or timing");
+        if (part != 1) for (int i=0;i<static_cast<int>(notes.size());++i) if(i!=index && note.beat < notes[static_cast<std::size_t>(i)].beat+notes[static_cast<std::size_t>(i)].duration
+            && note.beat+note.duration > notes[static_cast<std::size_t>(i)].beat) return juce::Result::fail("Overlapping monophonic notes");
+        notes[static_cast<std::size_t>(index)] = note;
+    }
+    std::stable_sort(notes.begin(),notes.end(),[](const auto& a,const auto& b){return a.beat<b.beat;}); rebuildMidi(); return juce::Result::ok();
+}
 void WingmanProcessor::generateMidi() { const juce::ScopedLock lock(mutex); generated = true; rebuildMidi(); }
 juce::Result WingmanProcessor::beginRecording(int i) {
     const juce::ScopedLock lock(mutex);
@@ -255,7 +315,7 @@ juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
             auto msg = sequence.getEventPointer(i)->message;
             msg.setTimeStamp(msg.getTimeStamp()*960.0); events.addEvent(msg);
         }
-        auto end = juce::MidiMessage::endOfTrack(); end.setTimeStamp(wingman::progressionBeats(chords)*960); events.addEvent(end);
+        auto end = juce::MidiMessage::endOfTrack(); end.setTimeStamp(sequenceLength*960); events.addEvent(end);
     }
     juce::MidiFile midi; midi.setTicksPerQuarterNote(960); midi.addTrack(events);
     juce::TemporaryFile temporary(file);
@@ -314,6 +374,17 @@ void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
         }
         state.addChild(node,-1,nullptr);
     }
+    juce::ValueTree patterns("Parts");
+    for (int i=0;i<3;++i) {
+        auto node = wingman::saveSettings(settings[static_cast<std::size_t>(i)]);
+        for (const auto& note : parts[static_cast<std::size_t>(i)]) {
+            juce::ValueTree event("Note"); event.setProperty("beat",note.beat,nullptr); event.setProperty("duration",note.duration,nullptr);
+            event.setProperty("note",note.note,nullptr); event.setProperty("velocity",note.velocity,nullptr); event.setProperty("channel",note.channel,nullptr); node.addChild(event,-1,nullptr);
+        }
+        patterns.addChild(node,-1,nullptr);
+    }
+    juce::MemoryOutputStream patternStream; patterns.writeToStream(patternStream);
+    state.setProperty("patterns",juce::var(patternStream.getMemoryBlock()),nullptr); state.setProperty("activePart",activePart,nullptr);
     juce::MemoryOutputStream stream(destination,false); state.writeToStream(stream);
 }
 void WingmanProcessor::setStateInformation(const void* data, int size) {
@@ -344,6 +415,24 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
     if (setProgression(state["chords"].toString()).failed()) return;
     setEditorSize(state.getProperty("width",1200),state.getProperty("height",760));
     tracks = std::move(restored); bpm = juce::jlimit(40.0,240.0,restoredBpm); transpose = juce::jlimit(0,11,static_cast<int>(state["key"]));
+    activePart = -1; for (auto& part : parts) part.clear();
+    if (const auto* bytes = state["patterns"].getBinaryData()) {
+        auto patterns = juce::ValueTree::readFromData(bytes->getData(),bytes->getSize());
+        if (patterns.hasType("Parts") && patterns.getNumChildren()==3) try {
+            for(int i=0;i<3;++i) {
+                auto node=patterns.getChild(i); auto& events=parts[static_cast<std::size_t>(i)];
+                settings[static_cast<std::size_t>(i)]=wingman::loadSettings(node);
+                if(node.getNumChildren()>8192) throw std::invalid_argument("Too many notes");
+                for(auto event : node) {
+                    wingman::NoteEvent note{static_cast<double>(event["beat"]),static_cast<double>(event["duration"]),static_cast<int>(event["note"]),static_cast<int>(event["velocity"]),static_cast<int>(event["channel"])};
+                    if(!std::isfinite(note.beat)||!std::isfinite(note.duration)||note.beat<0||note.duration<=0||note.beat+note.duration>settings[static_cast<std::size_t>(i)].bars*4
+                        ||note.note<0||note.note>127||note.velocity<1||note.velocity>127||note.channel<1||note.channel>16) throw std::invalid_argument("Invalid saved note");
+                    events.push_back(note);
+                }
+            }
+            activePart=juce::jlimit(-1,2,static_cast<int>(state.getProperty("activePart",-1)));
+        } catch(...) { for(auto& part : parts)part.clear(); activePart=-1; }
+    }
     generated = state["generated"]; previewEnabled = state["preview"]; playing = recording = false; rebuildMidi();
 }
 juce::AudioProcessorEditor* WingmanProcessor::createEditor() { return new WingmanEditor(*this); }

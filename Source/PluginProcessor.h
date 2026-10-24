@@ -2,6 +2,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
 #include "MIDI/ChordSequence.h"
+#include "MIDI/PatternSequence.h"
+#include "Generation/State.h"
 #include "AI/ChordDetection/HarmonicAnalysis.h"
 #include <thread>
 #include <atomic>
@@ -55,6 +57,15 @@ public:
     bool isRecording() const;
     juce::String detectTempo(int);
     bool midiIsGenerated() const;
+    juce::Result generatePart(int, const wingman::PatternSettings&);
+    juce::Result varyPart(int,int,int);
+    juce::Result toggleDrumStep(int,int,int);
+    void selectPart(int);
+    int selectedPart() const;
+    wingman::PatternSettings partSettings(int) const;
+    std::vector<wingman::NoteEvent> partNotes(int) const;
+    juce::Result editPartNote(int, int, const wingman::NoteEvent&, bool remove);
+
     juce::Result startAnalysis(int);
     void cancelAnalysis();
     bool analysisIsRunning() const { return analysisBusy.load(); }
@@ -70,6 +81,10 @@ private:
     std::vector<wingman::Chord> chords;
     juce::String chordText = "C Am F G";
     juce::MidiMessageSequence sequence;
+    double sequenceLength = 16;
+    int activePart = -1;
+    std::array<wingman::PatternSettings,3> settings;
+    std::array<std::vector<wingman::NoteEvent>,3> parts;
     juce::AudioBuffer<float> recordBuffer;
     int recordSamples = 0, recordTrack = 0;
     juce::Synthesiser synth;

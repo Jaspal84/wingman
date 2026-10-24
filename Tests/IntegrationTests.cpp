@@ -120,6 +120,28 @@ int main() {
         check(!p.analysisIsRunning() && !harmony.regions.empty() && harmony.regions.front().chord.root==0,"background analysis completes with detected C chord");
         check(p.progression().contains("C:") && p.key()==0,"detected duration progression applied");
         p.cancelAnalysis();
+        p.setProgression("C Am F G"); p.setKey(0);
+        for(int part=0;part<3;++part) {
+            wingman::PatternSettings config; config.bars=8; config.seed=123; config.humanize=0.3;
+            check(p.generatePart(part,config).wasOk(),"generate selected MIDI part");
+            const auto notes=p.partNotes(part); check(!notes.empty(),"generated part contains actual events");
+            auto partFile=directory.getChildFile("part-"+juce::String(part)+".mid");
+            check(p.exportMidi(partFile).wasOk(),"export generated part");
+            juce::MidiFile decodedMidi; auto partStream=partFile.createInputStream(); check(partStream && decodedMidi.readFrom(*partStream),"read generated part MIDI");
+            int attacks=0; for(int i=0;i<decodedMidi.getTrack(0)->getNumEvents();++i) attacks+=decodedMidi.getTrack(0)->getEventPointer(i)->message.isNoteOn();
+            check(attacks==static_cast<int>(notes.size()),"exported MIDI has all generated notes");
+            juce::MemoryBlock generatedState; p.getStateInformation(generatedState);
+            restored.setStateInformation(generatedState.getData(),static_cast<int>(generatedState.getSize()));
+            check(restored.selectedPart()==part && restored.partNotes(part)==notes,"generated notes and selection persist");
+            check(p.varyPart(part,0,4).wasOk(),"phrase variation");
+            auto outside=[](const auto& input){std::vector<wingman::NoteEvent> output;for(const auto& note:input)if(note.beat>=16)output.push_back(note);return output;};
+            check(outside(notes)==outside(p.partNotes(part)),"variation preserves untouched bars");
+        }
+        auto drumCount=p.partNotes(1).size(); check(p.toggleDrumStep(0,0,0).wasOk(),"step sequencer edits drum grid");
+        check(p.partNotes(1).size()!=drumCount,"step edit changes events");
+        auto invalidNote=p.partNotes(2).front(); invalidNote.velocity=0;
+        check(p.editPartNote(2,0,invalidNote,false).failed(),"reject invalid manual MIDI edit");
+        p.selectPart(-1);
         // Optional reproducible visual fixture, never loaded by the application itself.
         if (std::getenv("WINGMAN_SCREENSHOT")) {
             for (int lane = 0; lane < 4; ++lane) {

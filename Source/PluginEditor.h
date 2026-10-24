@@ -13,8 +13,9 @@ private:
     WingmanProcessor& processor;
     wingman::Theme theme;
     juce::TextButton record{"Record audio"}, playButton{"Play"}, stopButton{"Stop"};
-    juce::ComboBox keyBox, recordTarget, ideas;
-    juce::Slider bpm, timelineZoom, timelineScroll;
+    juce::ComboBox keyBox, recordTarget, ideas, partChoice;
+    juce::TextButton dragMidi{"Drag"};
+    juce::Slider bpm, timelineZoom, timelineScroll, midiBar;
     juce::Label status;
     juce::TextEditor chordInput;
     juce::TextButton apply{"Apply chords"}, generate{"Generate MIDI"}, exportMix{"Export WAV mix"}, exportMidi{"Export MIDI"};

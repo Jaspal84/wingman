@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "GUI/GeneratorPanel.h"
 namespace {
 const std::array<juce::String,4> names{"Vocals", "Other", "Bass", "Drums"};
 const juce::StringArray keyNames{"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
@@ -8,6 +9,18 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     const auto size = processor.editorSize();
     setResizable(true,false); setResizeLimits(960,608,1920,1216);
     setSize(size.first,size.second);
+    addAndMakeVisible(midiBar); midiBar.setRange(1,32,1); midiBar.setValue(1); midiBar.setTooltip("Drum step-sequencer bar (1-based)"); midiBar.onValueChange=[this]{repaint();};
+    addAndMakeVisible(partChoice); addAndMakeVisible(dragMidi);
+    partChoice.addItemList({"Chord MIDI","Bass MIDI","Drum MIDI","Melody MIDI"},1);
+    partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
+    partChoice.onChange = [this] { processor.selectPart(partChoice.getSelectedId()-2); repaint(); };
+    dragMidi.setTooltip("Drag the selected MIDI part into a compatible DAW");
+    dragMidi.onClick = [this] {
+        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("wingman-midi-",".mid",false);
+        const auto result = processor.exportMidi(file);
+        if (result.failed()) { showResult(result,{}); return; }
+        juce::DragAndDropContainer::performExternalDragDropOfFiles({file.getFullPathName()},false,this,[file]{file.deleteFile();});
+    };
     addAndMakeVisible(models); addAndMakeVisible(detect); addAndMakeVisible(cancel);
     detect.setTooltip("Analyse the selected input lane in a background worker; replaces the chord progression");
     detect.onClick = [this] { showResult(processor.startAnalysis(recordTarget.getSelectedId()-1),"Harmonic analysis started"); };
@@ -65,6 +78,22 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     auto applyChords = [this] { showResult(processor.setProgression(chordInput.getText()),"Progression updated; one bar per chord"); repaint(); };
     apply.onClick = applyChords; chordInput.onReturnKey = applyChords;
     generate.onClick = [this] {
+        const int part = partChoice.getSelectedId()-2;
+        if (part >= 0) {
+            auto initial = processor.partSettings(part);
+            const auto harmony = processor.analysisSnapshot();
+            if (!harmony.regions.empty()) { initial.keyRoot = harmony.keyRoot; initial.minor = harmony.minor; }
+            juce::DialogWindow::LaunchOptions options;
+            options.dialogTitle = part == 0 ? "Bass generator" : part == 1 ? "Drum generator" : "Melody generator";
+            options.content.setOwned(new wingman::GeneratorPanel(initial,[safe = juce::Component::SafePointer<WingmanEditor>(this),part](const auto& settings) {
+                if (!safe) return juce::Result::fail("Editor closed");
+                auto result = safe->processor.generatePart(part,settings); safe->repaint(); return result;
+            },[safe = juce::Component::SafePointer<WingmanEditor>(this),part](int first,int length){
+                return safe ? safe->processor.varyPart(part,first,length) : juce::Result::fail("Editor closed");
+            }));
+            options.dialogBackgroundColour = wingman::background; options.useNativeTitleBar = true;
+            options.resizable = true; options.launchAsync(); return;
+        }
         auto result = processor.setProgression(chordInput.getText());
         if (result.wasOk()) processor.generateMidi();
         showResult(result,"MIDI generated. Play to audition; export for your DAW."); repaint();
@@ -117,6 +146,8 @@ void WingmanEditor::chooseExport(bool midi, int track) {
         });
 }
 void WingmanEditor::refresh() {
+    partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
+    midiBar.setEnabled(processor.selectedPart()==1);
     keyBox.setSelectedId(processor.key()+1,juce::dontSendNotification);
     bpm.setValue(processor.tempo(),juce::dontSendNotification);
     preview.setToggleState(processor.preview(),juce::dontSendNotification);
@@ -179,7 +210,10 @@ void WingmanEditor::resized() {
     }
     ideas.setBounds(124,499,240,32); chordInput.setBounds(28,552,594,34); apply.setBounds(638,552,126,34);
     detect.setBounds(382,499,190,32); cancel.setBounds(584,499,180,32);
-    chordBounds = {28,602,852,92}; midiBounds = {914,557,248,78};
+    chordBounds = {28,602,852,92}; midiBounds = {914,557,248,64};
+    midiBar.setBounds(914,623,248,18);
+    partChoice.setBounds(912,533,252,25); dragMidi.setBounds(1090,680,74,28);
+    generate.setButtonText("Generate selected part");
     generate.setBounds(912,644,252,32); preview.setBounds(912,680,160,28);
     exportMidi.setBounds(1044,499,120,32); exportMix.setBounds(912,455,252,30);
     timelineZoom.setBounds(768,548,112,18); timelineScroll.setBounds(768,574,112,18);
@@ -199,7 +233,7 @@ void WingmanEditor::paint(juce::Graphics& g) {
     g.drawText("INPUT TRACKS",28,101,210,23,juce::Justification::centredLeft);
     g.drawText("EXPORT STEMS",912,101,252,23,juce::Justification::centredLeft);
     g.drawText("IDEAS",28,499,90,32,juce::Justification::centredLeft);
-    g.drawText("GENERATED MIDI",912,536,240,20,juce::Justification::centredLeft);
+
     double duration = 1;
     for (const auto& clip : cachedClips) if (clip) duration = std::max(duration,clip->audio.getNumSamples()/clip->sampleRate);
     g.setColour(juce::Colours::lightgrey); g.setFont(juce::FontOptions(11.0f));
@@ -249,7 +283,7 @@ void WingmanEditor::paint(juce::Graphics& g) {
             g.setColour(wingman::trackColours[static_cast<std::size_t>(i%4)]); g.fillRect(r.removeFromTop(3));
             g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(18.0f)); g.drawText(tokens[i],r,juce::Justification::centred);
             g.restoreState();
-            if (processor.midiIsGenerated()) if (auto chord = wingman::parseChord(tokens[i].toStdString()))
+            if (processor.selectedPart() < 0 && processor.midiIsGenerated()) if (auto chord = wingman::parseChord(tokens[i].toStdString()))
                 for (auto note : chord->notes(processor.key())) {
                     const float x = midiBounds.getX()+i*static_cast<float>(midiBounds.getWidth())/tokens.size();
                     const float y = midiBounds.getBottom()-8-(note-48)*1.6f;
@@ -257,10 +291,35 @@ void WingmanEditor::paint(juce::Graphics& g) {
                 }
         }
     }
+    if (processor.selectedPart() >= 0) {
+        const auto notes = processor.partNotes(processor.selectedPart());
+        const auto settings = processor.partSettings(processor.selectedPart());
+        g.saveState(); g.reduceClipRegion(midiBounds);
+        if(processor.selectedPart()==1) {
+            const int bar=juce::jlimit(0,settings.bars-1,static_cast<int>(midiBar.getValue())-1);
+            for(int row=0;row<9;++row)for(int step=0;step<16;++step){
+                const double beat=bar*4+step*0.25;
+                const bool enabled=std::any_of(notes.begin(),notes.end(),[&](const auto& e){return e.note==settings.drumMap[static_cast<std::size_t>(row)]&&std::abs(e.beat-beat)<0.12;});
+                g.setColour(enabled ? wingman::trackColours[3] : juce::Colour{0xff303c43});
+                g.fillRect(midiBounds.getX()+step*midiBounds.getWidth()/16+1,midiBounds.getY()+row*midiBounds.getHeight()/9+1,midiBounds.getWidth()/16-2,midiBounds.getHeight()/9-2);
+            }
+        } else for (const auto& note : notes) {
+            const float x = midiBounds.getX()+static_cast<float>(note.beat/(settings.bars*4)*midiBounds.getWidth());
+            const float width = std::max(1.0f,static_cast<float>(note.duration/(settings.bars*4)*midiBounds.getWidth()));
+            const float y = midiBounds.getBottom()-4-static_cast<float>(note.note%36)/36*(midiBounds.getHeight()-8);
+            g.setColour(wingman::trackColours[static_cast<std::size_t>(processor.selectedPart()+1)]); g.fillRect(x,y,width,3.0f);
+        }
+        g.restoreState();
+    }
 }
 
 void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
     const auto point = event.position/uiScale;
+    if(midiBounds.toFloat().contains(point) && processor.selectedPart()==1) {
+        const auto settings=processor.partSettings(1);
+        const int bar=juce::jlimit(0,settings.bars-1,static_cast<int>(midiBar.getValue())-1);
+        showResult(processor.toggleDrumStep(bar,static_cast<int>((point.y-midiBounds.getY())/midiBounds.getHeight()*9),static_cast<int>((point.x-midiBounds.getX())/midiBounds.getWidth()*16)),"Drum step changed"); repaint(); return;
+    }
     if (!chordBounds.toFloat().contains(point)) return;
     auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
     double total = 0; for (const auto& token : tokens) if (auto chord = wingman::parseChord(token.toStdString())) total += chord->beats;
