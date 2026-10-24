@@ -1,0 +1,14 @@
+{
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "architecture": "x86_64",
+  "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "available_cpus": 5,
+  "command": [
+    "build/wingman_harmony_tests"
+  ],
+  "exit_code": 0,
+  "wall_seconds": 10.680065212000045,
+  "cpu_seconds": 10.6652,
+  "peak_rss_bytes": 10354688,
+  "method": "Fresh benchmark process; perf_counter wall time and child getrusage. Not an M1 or inference benchmark."
+}
