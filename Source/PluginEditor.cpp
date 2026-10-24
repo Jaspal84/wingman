@@ -9,6 +9,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     const auto size = processor.editorSize();
     setResizable(true,false); setResizeLimits(960,608,1920,1216);
     setSize(size.first,size.second);
+    addAndMakeVisible(sync); sync.setTooltip("Follow the DAW playhead; local Play/BPM controls are disabled while synchronized"); sync.onClick=[this]{processor.setHostSync(sync.getToggleState());};
     addAndMakeVisible(midiBar); midiBar.setRange(1,32,1); midiBar.setValue(1); midiBar.setTooltip("Drum step-sequencer bar (1-based)"); midiBar.onValueChange=[this]{repaint();};
     addAndMakeVisible(partChoice); addAndMakeVisible(dragMidi);
     partChoice.addItemList({"Chord MIDI","Bass MIDI","Drum MIDI","Melody MIDI"},1);
@@ -148,6 +149,8 @@ void WingmanEditor::chooseExport(bool midi, int track) {
 void WingmanEditor::refresh() {
     partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
     midiBar.setEnabled(processor.selectedPart()==1);
+    sync.setToggleState(processor.hostSync(),juce::dontSendNotification);
+    bpm.setEnabled(!processor.hostSync()); playButton.setEnabled(!processor.hostSync()); stopButton.setEnabled(!processor.hostSync());
     keyBox.setSelectedId(processor.key()+1,juce::dontSendNotification);
     bpm.setValue(processor.tempo(),juce::dontSendNotification);
     preview.setToggleState(processor.preview(),juce::dontSendNotification);
@@ -171,6 +174,14 @@ void WingmanEditor::timerCallback() {
     if (running) status.setText("Analysing harmony: "+juce::String(processor.analysisPercent()*100,0)+"%",juce::dontSendNotification);
     else if (analysisWasRunning) status.setText(processor.analysisMessage(),juce::dontSendNotification);
     analysisWasRunning = running;
+    if(processor.hostSync()&&!running){
+        if(auto host=processor.hostPosition()) {
+            const double quartersPerBar=host->numerator*4.0/host->denominator;
+            const auto bar=static_cast<juce::int64>(std::floor(host->ppq/quartersPerBar));
+            const int beat=static_cast<int>(std::floor((host->ppq-bar*quartersPerBar)*host->denominator/4))+1;
+            status.setText("DAW "+juce::String(host->playing?"playing":"stopped")+" | "+juce::String(host->numerator)+"/"+juce::String(host->denominator)+" | bar "+juce::String(bar+1)+" beat "+juce::String(beat),juce::dontSendNotification);
+        } else status.setText("DAW sync: waiting for a valid host PPQ position",juce::dontSendNotification);
+    }
     // Host state can change while the editor remains open; preserve active text edits.
     if (!chordInput.hasKeyboardFocus(true) && chordInput.getText() != processor.progression()) chordInput.setText(processor.progression());
     refresh();
@@ -198,7 +209,7 @@ void WingmanEditor::rebuildWaveform(int i) {
 void WingmanEditor::resized() {
     uiScale = std::min(getWidth()/1200.0f,getHeight()/760.0f);
     processor.setEditorSize(getWidth(),getHeight());
-    models.setBounds(942,24,222,34);
+    models.setBounds(942,24,222,34); sync.setBounds(870,24,68,34);
     record.setBounds(206,24,142,34); recordTarget.setBounds(354,24,118,34);
     keyBox.setBounds(493,27,72,30); bpm.setBounds(581,27,120,30);
     playButton.setBounds(719,24,68,34); stopButton.setBounds(795,24,68,34);

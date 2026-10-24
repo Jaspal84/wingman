@@ -3,6 +3,11 @@
 #include <stdexcept>
 static int checks = 0;
 static void check(bool value, const char* message) { ++checks; if (std::getenv("WINGMAN_TRACE_TESTS")) std::cerr << "CHECK " << checks << ": " << message << "\n"; if (!value) throw std::runtime_error(message); }
+class MockPlayhead final : public juce::AudioPlayHead {
+public:
+    juce::Optional<PositionInfo> position;
+    juce::Optional<PositionInfo> getPosition() const override {return position;}
+};
 int main() {
     juce::ScopedJuceInitialiser_GUI juceInit;
     const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("wingman-tests", "", false);
@@ -142,6 +147,30 @@ int main() {
         auto invalidNote=p.partNotes(2).front(); invalidNote.velocity=0;
         check(p.editPartNote(2,0,invalidNote,false).failed(),"reject invalid manual MIDI edit");
         p.selectPart(-1);
+        WingmanProcessor hosted; hosted.prepareToPlay(48000,1024); hosted.setPreview(false); hosted.generateMidi();
+        MockPlayhead mock; hosted.setPlayHead(&mock); hosted.setHostSync(true);
+        juce::AudioPlayHead::PositionInfo position; position.setBpm(120);position.setPpqPosition(0);position.setTimeInSeconds(0);position.setIsPlaying(true);
+        position.setTimeSignature(juce::AudioPlayHead::TimeSignature{4,4});mock.position=position;
+        juce::AudioBuffer<float> hostAudio(2,1024); midi.clear();hosted.processBlock(hostAudio,midi);
+        int hostedOns=0;for(auto metadata:midi)hostedOns+=metadata.getMessage().isNoteOn();
+        check(hostedOns==3&&hosted.isPlaying(),"mock host starts chord output");
+        position.setPpqPosition(9);position.setTimeInSeconds(4.5);mock.position=position;midi.clear();hosted.processBlock(hostAudio,midi);
+        int chased=0,released=0;for(auto metadata:midi){chased+=metadata.getMessage().isNoteOn();released+=metadata.getMessage().isNoteOff();}
+        check(chased==3&&released==3,"host seek releases owned notes and chases held harmony");
+        position.setIsPlaying(false);mock.position=position;midi.clear();hosted.processBlock(hostAudio,midi);
+        released=0;for(auto metadata:midi)released+=metadata.getMessage().isNoteOff();check(released==3&&!hosted.isPlaying(),"host stop releases every generated note");
+        mock.position={};midi.clear();hosted.processBlock(hostAudio,midi);check(!hosted.isPlaying()&&!hosted.hostPosition(),"missing host position is safe");
+        position.setIsPlaying(true);position.setPpqPosition(3.99);position.setTimeInSeconds(1.995);position.setIsLooping(true);position.setLoopPoints(juce::AudioPlayHead::LoopPoints{0,4});mock.position=position;
+        midi.clear();hosted.processBlock(hostAudio,midi);int loopOns=0;for(auto metadata:midi)if(metadata.getMessage().isNoteOn()){++loopOns;check(metadata.samplePosition==240,"host loop MIDI offset");}
+        check(loopOns==3,"host loop emits each onset once");
+        for(int ch=0;ch<2;++ch)juce::FloatVectorOperations::fill(hostAudio.getWritePointer(ch),0.37f,1024);
+        midi.clear();hosted.processBlockBypassed(hostAudio,midi);check(std::abs(hostAudio.getSample(0,100)-0.37f)<1e-6,"bypass preserves dry input");
+        released=0;for(auto metadata:midi)released+=metadata.getMessage().isNoteOff();check(released==3,"bypass releases generated notes");
+        hosted.setPlayHead(nullptr);hosted.setHostSync(false);
+        WingmanProcessor stress;stress.prepareToPlay(48000,512);stress.importWav(0,source);stress.play();
+        std::jthread controls([&]{for(int i=0;i<1000;++i)stress.setTrackMix(0,static_cast<float>(i%100)/100,false,false);});
+        for(int blockIndex=0;blockIndex<100;++blockIndex){midi.clear();stress.processBlock(block,midi);check(std::isfinite(block.getSample(0,100))&&block.getMagnitude(0,512)<=1,"concurrent control edits produce bounded finite audio");}
+        controls.join();
         // Optional reproducible visual fixture, never loaded by the application itself.
         if (std::getenv("WINGMAN_SCREENSHOT")) {
             for (int lane = 0; lane < 4; ++lane) {

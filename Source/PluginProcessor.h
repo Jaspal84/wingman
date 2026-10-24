@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
+#include "Audio/PreviewSynth.h"
+#include "Host/Transport.h"
 #include "MIDI/ChordSequence.h"
 #include "MIDI/PatternSequence.h"
 #include "Generation/State.h"
@@ -16,6 +18,11 @@ public:
     void releaseResources() override;
     using juce::AudioProcessor::processBlock;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using juce::AudioProcessor::processBlockBypassed;
+    void processBlockBypassed(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
+    void setHostSync(bool);
+    bool hostSync() const;
+    std::optional<wingman::HostFrame> hostPosition() const;
     bool isBusesLayoutSupported(const BusesLayout&) const override;
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -87,7 +94,15 @@ private:
     std::array<std::vector<wingman::NoteEvent>,3> parts;
     juce::AudioBuffer<float> recordBuffer;
     int recordSamples = 0, recordTrack = 0;
-    juce::Synthesiser synth;
+    wingman::PreviewSynth synth;
+    wingman::HostClock hostClock;
+    bool syncEnabled=false, hostAvailable=false;
+    wingman::HostFrame observedHost;
+    std::atomic<bool> recoverMidi{false};
+    std::array<std::array<bool,128>,16> ownedNotes{};
+    void flushOwnedNotes(juce::MidiBuffer&,int);
+    void scheduleMidi(double,int,int,juce::MidiBuffer&);
+    void chaseMidi(double,int,juce::MidiBuffer&);
     std::atomic<bool> analysisBusy{false};
     std::atomic<double> analysisProgress{0};
     juce::String analysisStatus;

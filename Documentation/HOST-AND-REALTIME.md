@@ -1,0 +1,15 @@
+# Host transport and audio callback
+
+The DAW toggle selects JUCE AudioPlayHead control. Valid PPQ and tempo drive MIDI beat scheduling, waveform time and transport state. BPM, time signature, play/stop and loop points are read when supplied. The status bar reports meter/bar/beat or missing position. Local Play/Stop/BPM controls are disabled while synchronized; standalone transport remains independent when the toggle is off.
+
+The bounded HostClock detects seeks/start/stops, handles missing/invalid position safely, splits a block across loop boundaries into a fixed array of at most 64 spans, and rejects malformed data. Scheduling tracks notes owned by the plugin: discontinuities, stop and bypass release them without globally issuing All Notes Off on every channel. A seek into a held chord chases the currently active voicing. Loop wrap flushes/re-chases at the computed sample offset. Negative pre-roll does not emit generated notes.
+
+Preview uses a 32-voice fixed pool with sine tones and synthesized noise percussion. It has no Synthesiser mutex or sample loading. Recording sanitizes nonfinite input; live mixer/preview output is finite and clipped to [-1,1]. Bypass preserves dry input and releases generated notes. These are guardrails, not a mastering limiter or a professional sampled instrument.
+
+Linux tests: pure clock continuity, tempo changes, seek/stop/missing state, negative pre-roll and invalid meter; mock JUCE playhead note counts, sustained-note chase, a loop at sample offset 240, missing PPQ, bypass and concurrent control updates. The existing local MIDI timing and audio/state regressions still pass.
+
+Remaining real-time limits: the engine still uses a nonblocking try-lock for session/control snapshots. Concurrent edits/state serialization can cause silent blocks; recovery releases owned notes instead of waiting or leaving hanging notes. JUCE's host-owned MIDI buffer may grow when events are appended; scheduling is capped at 16,384 generated events per block, but zero heap allocation for all host buffers has not been proved. Immutable lock-free snapshot exchange and allocation instrumentation remain release work. No I/O, model inference or network access is performed by the audio callback.
+
+Host musical position is authoritative for MIDI. Seconds supplied by the host are preferred for audio; the fallback derives seconds from current BPM and PPQ and cannot reconstruct historical tempo maps. Within-block loop audio offsets assume a constant tempo over the block. Generators currently use 4/4 patterns even if the host reports another meter; the UI reports that meter but does not claim meter-aware generation. Host sample-accurate tempo ramps and MainStage-specific position behavior need real integration tests.
+
+**Not validated:** actual macOS AU, Logic Pro, MainStage, external DAW MIDI routing, native M1 timing or CoreAudio hardware. Mock playhead tests do not establish any of these. Follow AU-VALIDATION.md on a Mac and retain actual auval/DAW logs before marking DAW integration complete.

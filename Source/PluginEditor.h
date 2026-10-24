@@ -19,6 +19,7 @@ private:
     juce::Label status;
     juce::TextEditor chordInput;
     juce::TextButton apply{"Apply chords"}, generate{"Generate MIDI"}, exportMix{"Export WAV mix"}, exportMidi{"Export MIDI"};
+    juce::ToggleButton sync{"DAW"};
     juce::ToggleButton preview{"Audition chords"};
     std::array<juce::TextButton,4> imports, solos, mutes, stemExports;
     std::array<juce::Slider,4> volumes, pans;

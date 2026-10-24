@@ -3,46 +3,11 @@
 #include <limits>
 namespace {
 constexpr double maxClipSeconds = 120.0;
-class Sound final : public juce::SynthesiserSound {
-public:
-    bool appliesToNote(int) override { return true; }
-    bool appliesToChannel(int) override { return true; }
-};
-class Voice final : public juce::SynthesiserVoice {
-    double phase = 0, delta = 0;
-    float level = 0;
-    juce::ADSR envelope;
-public:
-    using juce::SynthesiserVoice::renderNextBlock;
-    bool canPlaySound(juce::SynthesiserSound* s) override { return dynamic_cast<Sound*>(s) != nullptr; }
-    void startNote(int note, float velocity, juce::SynthesiserSound*, int) override {
-        phase = 0;
-        delta = juce::MathConstants<double>::twoPi * juce::MidiMessage::getMidiNoteInHertz(note) / getSampleRate();
-        level = velocity * 0.12f;
-        envelope.setSampleRate(getSampleRate());
-        envelope.setParameters({0.01f, 0.12f, 0.65f, 0.02f});
-        envelope.noteOn();
-    }
-    void stopNote(float, bool tail) override { if (tail) envelope.noteOff(); else { envelope.reset(); clearCurrentNote(); } }
-    void pitchWheelMoved(int) override {}
-    void controllerMoved(int, int) override {}
-    void renderNextBlock(juce::AudioBuffer<float>& out, int start, int count) override {
-        while (--count >= 0) {
-            const float value = static_cast<float>(std::sin(phase)) * level * envelope.getNextSample();
-            phase = std::fmod(phase + delta, juce::MathConstants<double>::twoPi);
-            for (int ch = 0; ch < out.getNumChannels(); ++ch) out.addSample(ch, start, value);
-            ++start;
-            if (!envelope.isActive()) { clearCurrentNote(); break; }
-        }
-    }
-};
 bool validTrack(int i) { return i >= 0 && i < 4; }
 }
 WingmanProcessor::WingmanProcessor()
     : AudioProcessor(BusesProperties().withInput("Input", juce::AudioChannelSet::stereo(), true)
                                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)) {
-    for (int i = 0; i < 16; ++i) synth.addVoice(new Voice);
-    synth.addSound(new Sound);
     setProgression(chordText);
 }
 WingmanProcessor::~WingmanProcessor() { cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
@@ -92,66 +57,110 @@ bool WingmanProcessor::isBusesLayoutSupported(const BusesLayout& layout) const {
 void WingmanProcessor::prepareToPlay(double rate, int) {
     const juce::ScopedLock lock(mutex);
     engineRate = rate;
-    synth.setCurrentPlaybackSampleRate(rate);
+    synth.prepare(rate); hostClock.reset();
     // Reserve once outside the audio callback. Recording is capped at two minutes.
     recordBuffer.setSize(2, static_cast<int>(rate * maxClipSeconds));
     recordSamples = 0; recording = false; panic = true;
 }
 void WingmanProcessor::releaseResources() {
     const juce::ScopedLock lock(mutex);
-    synth.allNotesOff(0, false);
+    synth.allNotesOff();
     playing = recording = false;
+}
+void WingmanProcessor::setHostSync(bool enabled) { const juce::ScopedLock lock(mutex); syncEnabled=enabled; hostClock.reset(); panic=true; }
+bool WingmanProcessor::hostSync() const { const juce::ScopedLock lock(mutex); return syncEnabled; }
+std::optional<wingman::HostFrame> WingmanProcessor::hostPosition() const { const juce::ScopedLock lock(mutex); return hostAvailable?std::optional{observedHost}:std::nullopt; }
+void WingmanProcessor::flushOwnedNotes(juce::MidiBuffer& midi,int offset) {
+    for(int channel=0;channel<16;++channel)for(int note=0;note<128;++note)if(ownedNotes[static_cast<std::size_t>(channel)][static_cast<std::size_t>(note)]){
+        midi.addEvent(juce::MidiMessage::noteOff(channel+1,note),offset);ownedNotes[static_cast<std::size_t>(channel)][static_cast<std::size_t>(note)]=false;
+    }
+}
+void WingmanProcessor::chaseMidi(double beat,int offset,juce::MidiBuffer& midi) {
+    if(!generated||beat<0||sequenceLength<=0)return;
+    const double phase=std::fmod(beat,sequenceLength);
+    for(int i=0;i<sequence.getNumEvents();++i){const auto* event=sequence.getEventPointer(i);
+        if(event->message.isNoteOn()&&event->noteOffObject&&event->message.getTimeStamp()<phase-1.0e-8&&event->noteOffObject->message.getTimeStamp()>phase){
+            midi.addEvent(event->message,offset);ownedNotes[static_cast<std::size_t>(event->message.getChannel()-1)][static_cast<std::size_t>(event->message.getNoteNumber())]=true;
+        }
+    }
+}
+void WingmanProcessor::scheduleMidi(double startBeat,int offset,int count,juce::MidiBuffer& midi) {
+    if(!generated||sequenceLength<=0||count<=0)return;
+    const double endBeat=startBeat+count/engineRate*bpm/60;
+    const auto firstLoop=static_cast<juce::int64>(std::floor(startBeat/sequenceLength));
+    const auto lastLoop=static_cast<juce::int64>(std::floor(endBeat/sequenceLength));
+    int events=0;
+    for(auto loop=firstLoop;loop<=lastLoop && events<16384;++loop)for(int i=0;i<sequence.getNumEvents() && events<16384;++i){
+        const auto& message=sequence.getEventPointer(i)->message;
+        const double beat=loop*sequenceLength+message.getTimeStamp();
+        if(beat>=0 && beat>=startBeat && beat<endBeat){
+            const int at=offset+juce::jlimit(0,count-1,static_cast<int>(std::llround((beat-startBeat)*60/bpm*engineRate)));
+            if(message.isNoteOff()&&!ownedNotes[static_cast<std::size_t>(message.getChannel()-1)][static_cast<std::size_t>(message.getNoteNumber())])continue;
+            midi.addEvent(message,at);++events;
+            if(message.isNoteOnOrOff())ownedNotes[static_cast<std::size_t>(message.getChannel()-1)][static_cast<std::size_t>(message.getNoteNumber())]=message.isNoteOn();
+        }
+    }
+    if(events>=16384){flushOwnedNotes(midi,offset+count-1);recoverMidi=true;}
 }
 void WingmanProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::MidiBuffer& midi) {
     juce::ScopedNoDenormals noDenormals;
     const juce::ScopedTryLock lock(mutex);
-    if (!lock.isLocked()) { audio.clear(); midi.clear(); return; }
-    const int count = audio.getNumSamples();
-    if (recording) {
-        const int n = std::min(count, recordBuffer.getNumSamples() - recordSamples);
-        const int inputs = std::min(getTotalNumInputChannels(), audio.getNumChannels());
-        for (int ch = 0; ch < 2; ++ch)
-            if (inputs > 0) recordBuffer.copyFrom(ch, recordSamples, audio, std::min(ch, inputs-1), 0, n);
-            else recordBuffer.clear(ch, recordSamples, n);
-        recordSamples += n;
+    if (!lock.isLocked()) { audio.clear();midi.clear();flushOwnedNotes(midi,0);synth.allNotesOff();recoverMidi=true;return; }
+    const int count=audio.getNumSamples();
+    if(count==0)return;
+    if(recording){
+        const int n=std::min(count,recordBuffer.getNumSamples()-recordSamples);
+        const int inputs=std::min(getTotalNumInputChannels(),audio.getNumChannels());
+        for(int ch=0;ch<2;++ch)for(int i=0;i<n;++i){const float value=inputs?audio.getSample(std::min(ch,inputs-1),i):0;recordBuffer.setSample(ch,recordSamples+i,std::isfinite(value)?value:0);}
+        recordSamples+=n;
     }
-    audio.clear();
-    if (panic) {
-        synth.allNotesOff(0, false);
-        for (int ch = 1; ch <= 16; ++ch) midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
-        panic = false;
-    }
-    if (playing) {
-        bool anySolo = false;
-        for (const auto& track : tracks) anySolo |= track.solo;
-        for (const auto& track : tracks) {
-            if (!track.clip || track.mute || (anySolo && !track.solo)) continue;
-            const auto& clip = *track.clip;
-            for (int i = 0; i < count; ++i) {
-                const double sourcePosition = (seconds + i / engineRate) * clip.sampleRate;
-                for (int ch = 0; ch < audio.getNumChannels(); ++ch)
-                    audio.addSample(ch, i, wingman::interpolate(clip, ch, sourcePosition) * track.gain * wingman::balanceGain(track.pan,ch));
+    wingman::TransportBlock hostBlock;
+    if(syncEnabled){
+        std::optional<wingman::HostFrame> frame;
+        if(auto* playhead=getPlayHead())if(const auto position=playhead->getPosition()){
+            if(auto ppq=position->getPpqPosition()){
+                wingman::HostFrame data;data.bpm=position->getBpm().orFallback(bpm);data.ppq=*ppq;
+                data.seconds=position->getTimeInSeconds().orFallback(*ppq*60/data.bpm);data.playing=position->getIsPlaying();
+                if(auto signature=position->getTimeSignature()){data.numerator=signature->numerator;data.denominator=signature->denominator;}
+                data.looping=position->getIsLooping();if(auto loop=position->getLoopPoints()){data.loopStart=loop->ppqStart;data.loopEnd=loop->ppqEnd;}
+                frame=data;
             }
         }
-        if (generated && !chords.empty()) {
-            const double startBeat = seconds * bpm / 60.0;
-            const double endBeat = (seconds + count / engineRate) * bpm / 60.0;
-            const double length = sequenceLength;
-            const auto firstLoop = static_cast<juce::int64>(std::floor(startBeat / length));
-            const auto lastLoop = static_cast<juce::int64>(std::floor(endBeat / length));
-            for (auto loop = firstLoop; loop <= lastLoop; ++loop)
-                for (int i = 0; i < sequence.getNumEvents(); ++i) {
-                    const auto& msg = sequence.getEventPointer(i)->message;
-                    const double beat = loop * length + msg.getTimeStamp();
-                    if (beat >= startBeat && beat < endBeat) {
-                        const int offset = juce::jlimit(0, count-1, static_cast<int>(std::llround((beat-startBeat)*60.0/bpm*engineRate)));
-                        midi.addEvent(msg, offset);
-                    }
+        hostBlock=hostClock.resolve(frame,count,engineRate);hostAvailable=hostBlock.valid;
+        if(hostAvailable){observedHost=hostBlock.frame;bpm=hostBlock.frame.bpm;seconds=hostBlock.frame.seconds;}
+        if(playing!=hostBlock.playing||hostBlock.discontinuity)panic=true;
+        playing=hostBlock.playing;
+    } else hostAvailable=false;
+    audio.clear();
+    const bool recovered=recoverMidi.exchange(false);
+    const bool resetNotes=panic||recovered;
+    if(resetNotes){flushOwnedNotes(midi,0);synth.allNotesOff();panic=false;}
+    if(playing){
+        bool anySolo=false;for(const auto& track:tracks)anySolo|=track.solo;
+        for(const auto& track:tracks){
+            if(!track.clip||track.mute||(anySolo&&!track.solo))continue;
+            const auto& clip=*track.clip;
+            for(int i=0;i<count;++i){
+                double time=seconds+i/engineRate;
+                if(syncEnabled && hostBlock.frame.looping){
+                    const double beat=hostBlock.frame.ppq+i/engineRate*bpm/60;
+                    if(beat>=hostBlock.frame.loopEnd)time-=(std::floor((beat-hostBlock.frame.loopStart)/(hostBlock.frame.loopEnd-hostBlock.frame.loopStart)))*(hostBlock.frame.loopEnd-hostBlock.frame.loopStart)*60/bpm;
                 }
+                for(int ch=0;ch<audio.getNumChannels();++ch)audio.addSample(ch,i,wingman::interpolate(clip,ch,time*clip.sampleRate)*track.gain*wingman::balanceGain(track.pan,ch));
+            }
         }
-        seconds += count / engineRate;
+        if(syncEnabled){
+            if(resetNotes)chaseMidi(hostBlock.frame.ppq,0,midi);
+            for(int i=0;i<hostBlock.spanCount;++i){const auto& span=hostBlock.spans[static_cast<std::size_t>(i)];if(span.restart){flushOwnedNotes(midi,span.offset);chaseMidi(span.beat,span.offset,midi);}scheduleMidi(span.beat,span.offset,span.count,midi);}
+        } else scheduleMidi(seconds*bpm/60,0,count,midi);
+        seconds+=count/engineRate;
     }
-    if (previewEnabled) synth.renderNextBlock(audio, midi, 0, count);
+    if(previewEnabled)synth.renderNextBlock(audio,midi,0,count);
+    for(int ch=0;ch<audio.getNumChannels();++ch)for(int i=0;i<count;++i){const float value=audio.getSample(ch,i);audio.setSample(ch,i,std::isfinite(value)?juce::jlimit(-1.0f,1.0f,value):0);}
+}
+void WingmanProcessor::processBlockBypassed(juce::AudioBuffer<float>& audio,juce::MidiBuffer& midi){
+    flushOwnedNotes(midi,0);synth.allNotesOff();recoverMidi=true;
+    for(int ch=getTotalNumInputChannels();ch<audio.getNumChannels();++ch)audio.clear(ch,0,audio.getNumSamples());
 }
 void WingmanProcessor::play() { const juce::ScopedLock lock(mutex); playing = true; }
 void WingmanProcessor::stop() { const juce::ScopedLock lock(mutex); playing = false; seconds = 0; panic = true; }
@@ -275,7 +284,7 @@ juce::Result WingmanProcessor::editPartNote(int part,int index,const wingman::No
     if (remove) notes.erase(notes.begin()+index);
     else {
         if (!std::isfinite(note.beat) || !std::isfinite(note.duration) || note.beat < 0 || note.duration <= 0
-            || note.beat+note.duration > settings[static_cast<std::size_t>(part)].bars*4 || note.note < 0 || note.note > 127 || note.velocity < 1 || note.velocity > 127)
+            || note.beat+note.duration > settings[static_cast<std::size_t>(part)].bars*4 || note.note < 0 || note.note > 127 || note.velocity < 1 || note.velocity > 127 || note.channel < 1 || note.channel > 16)
             return juce::Result::fail("Invalid MIDI note or timing");
         if (part != 1) for (int i=0;i<static_cast<int>(notes.size());++i) if(i!=index && note.beat < notes[static_cast<std::size_t>(i)].beat+notes[static_cast<std::size_t>(i)].duration
             && note.beat+note.duration > notes[static_cast<std::size_t>(i)].beat) return juce::Result::fail("Overlapping monophonic notes");
@@ -359,7 +368,7 @@ void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
     juce::ValueTree state("Wingman");
     const juce::ScopedLock lock(mutex);
     state.setProperty("width",editorWidth,nullptr); state.setProperty("height",editorHeight,nullptr);
-    state.setProperty("version",1,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
+    state.setProperty("hostSync",syncEnabled,nullptr); state.setProperty("version",1,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
     state.setProperty("chords",chordText,nullptr); state.setProperty("generated",generated,nullptr); state.setProperty("preview",previewEnabled,nullptr);
     for (const auto& t : tracks) {
         juce::ValueTree node("Track");
@@ -433,6 +442,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
             activePart=juce::jlimit(-1,2,static_cast<int>(state.getProperty("activePart",-1)));
         } catch(...) { for(auto& part : parts)part.clear(); activePart=-1; }
     }
+    syncEnabled=state.getProperty("hostSync",false); hostClock.reset();
     generated = state["generated"]; previewEnabled = state["preview"]; playing = recording = false; rebuildMidi();
 }
 juce::AudioProcessorEditor* WingmanProcessor::createEditor() { return new WingmanEditor(*this); }
