@@ -1,0 +1,46 @@
+cmake_minimum_required(VERSION 3.22)
+project(Wingman VERSION 0.1.0 LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+include(CTest)
+option(WINGMAN_BUILD_PLUGIN "Build JUCE plugin and standalone" ON)
+add_library(wingman_dsp INTERFACE)
+target_include_directories(wingman_dsp INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+if(BUILD_TESTING)
+  add_executable(wingman_dsp_tests Tests/DSPTests.cpp)
+  target_link_libraries(wingman_dsp_tests PRIVATE wingman_dsp)
+  add_test(NAME dsp COMMAND wingman_dsp_tests)
+endif()
+if(WINGMAN_BUILD_PLUGIN)
+  set(JUCE_SOURCE_DIR "" CACHE PATH "Existing JUCE 8 checkout (otherwise fetched)")
+  if(JUCE_SOURCE_DIR)
+    add_subdirectory("${JUCE_SOURCE_DIR}" JUCE)
+  else()
+    include(FetchContent)
+    FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+      GIT_TAG 51a8a6d7aeae7326956d747737ccf1575e61e209 GIT_SHALLOW FALSE)
+    FetchContent_MakeAvailable(JUCE)
+  endif()
+  if(APPLE)
+    set(WINGMAN_FORMATS AU VST3 Standalone)
+  else()
+    set(WINGMAN_FORMATS VST3 Standalone)
+  endif()
+  juce_add_plugin(Wingman COMPANY_NAME "Wingman Audio" BUNDLE_ID "com.wingmanaudio.wingman"
+    PLUGIN_MANUFACTURER_CODE Wgma PLUGIN_CODE Wgm1 FORMATS ${WINGMAN_FORMATS}
+    PRODUCT_NAME "Wingman" IS_SYNTH FALSE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT TRUE
+    IS_MIDI_EFFECT FALSE COPY_PLUGIN_AFTER_BUILD FALSE
+    MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Record audio into Wingman tracks."
+    VST3_CATEGORIES Fx Instrument)
+  target_sources(Wingman PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+  target_compile_definitions(Wingman PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0)
+  target_link_libraries(Wingman PUBLIC wingman_dsp juce::juce_audio_utils juce::juce_audio_formats
+    PRIVATE juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+  if(BUILD_TESTING)
+    add_executable(wingman_integration_tests Tests/IntegrationTests.cpp)
+    target_link_libraries(wingman_integration_tests PRIVATE Wingman juce::juce_recommended_config_flags)
+    add_test(NAME integration COMMAND wingman_integration_tests)
+  endif()
+endif()
