@@ -1,0 +1,24 @@
+{
+  "name": "HTDemucs four-source",
+  "demucs_version": "4.0.1",
+  "source_commit": "ef66d254cd6d558e207eeff2c4b8d053db2e77dd",
+  "model_id": "955717e8",
+  "checkpoint": "955717e8-8726e21a.th",
+  "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th",
+  "bytes": 84141911,
+  "sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+  "license": "MIT",
+  "license_source": "https://github.com/facebookresearch/demucs/blob/ef66d254cd6d558e207eeff2c4b8d053db2e77dd/LICENSE",
+  "license_sha256": "cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173",
+  "sample_rate": 44100,
+  "channels": 2,
+  "sources": [
+    "drums",
+    "bass",
+    "other",
+    "vocals"
+  ],
+  "runtime": "PyTorch CPU 2.5.1 / torchaudio 2.5.1",
+  "linux_inference_verified": true,
+  "macos_inference_verified": false
+}

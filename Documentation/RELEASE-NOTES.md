@@ -1,3 +1,5 @@
+> Historical snapshot: the model-host/inference blocker described below is superseded by [INFERENCE-VALIDATION.md](INFERENCE-VALIDATION.md). macOS/Logic/M1 acceptance remains pending.
+
 # 0.2.0 development snapshot
 
 This is not a validated release or signed distribution.

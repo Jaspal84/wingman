@@ -1,0 +1,38 @@
+{
+  "bass": {
+    "frames": 960000,
+    "sample_rate": 48000,
+    "channels": 2,
+    "subtype": "PCM_24",
+    "finite": true,
+    "rms": 0.0002327520478782013,
+    "peak": 0.008325457572937012
+  },
+  "vocals": {
+    "frames": 960000,
+    "sample_rate": 48000,
+    "channels": 2,
+    "subtype": "PCM_24",
+    "finite": true,
+    "rms": 0.0001206419248064755,
+    "peak": 0.0031222105026245117
+  },
+  "other": {
+    "frames": 960000,
+    "sample_rate": 48000,
+    "channels": 2,
+    "subtype": "PCM_24",
+    "finite": true,
+    "rms": 0.11270433995635945,
+    "peak": 0.6264959573745728
+  },
+  "drums": {
+    "frames": 960000,
+    "sample_rate": 48000,
+    "channels": 2,
+    "subtype": "PCM_24",
+    "finite": true,
+    "rms": 0.0703444042693792,
+    "peak": 0.5054150819778442
+  }
+}

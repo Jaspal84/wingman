@@ -17,9 +17,17 @@ class WorkerTests(unittest.TestCase):
         (self.root/'wingman-model.json').write_text(json.dumps({'model':'other'}))
         with self.assertRaises(ValueError): worker.verify_model(self.root)
     def test_corrupted_checkpoint(self):
-        (self.root/'wingman-model.json').write_text(json.dumps({'model':'htdemucs','demucs':'4.0.1','sha256':worker.MODEL_PREFIX+'0'*56}))
+        (self.root/'wingman-model.json').write_text(json.dumps({'model':'htdemucs','demucs':'4.0.1','license':'MIT','sha256':worker.MODEL_SHA256}))
         (self.root/worker.MODEL_FILE).write_bytes(b'not an actual checkpoint')
         with self.assertRaisesRegex(ValueError,'checksum mismatch'): worker.verify_model(self.root)
+    def test_tampered_manifest_cannot_repin_checkpoint(self):
+        (self.root/'wingman-model.json').write_text(json.dumps({'model':'htdemucs','demucs':'4.0.1','license':'MIT','sha256':worker.MODEL_PREFIX+'0'*56}))
+        with self.assertRaisesRegex(ValueError,'pinned official'): worker.verify_model(self.root)
+    def test_unexpected_license_rejected(self):
+        (self.root/'wingman-model.json').write_text(json.dumps({'model':'htdemucs','demucs':'4.0.1','license':'unknown','sha256':worker.MODEL_SHA256}))
+        with self.assertRaisesRegex(ValueError,'license metadata'): worker.verify_model(self.root)
+    def test_license_text_matches_pinned_notice(self):
+        self.assertEqual(hashlib.sha256(worker.MODEL_LICENSE_TEXT.encode()).hexdigest(),worker.MODEL_LICENSE_SHA256)
     def test_download_requires_explicit_consent(self):
         with self.assertRaisesRegex(ValueError,'Explicit'): worker.install(argparse.Namespace(allow_download=False,accept_mit_license=True))
     def test_checksum(self):

@@ -31,7 +31,7 @@ Drag creates a temporary MIDI file and requests JUCE external file drag/drop. Th
 3. To download weights, explicitly select the MIT/download consent checkbox, then Install official model. Alternatively select an existing offline installation and Verify local model.
 4. Select Separate WAV, choose a mono/stereo mix up to 120 seconds, and monitor progress. Cancel terminates the owned subprocess. Successful output must pass format, finite-sample and synchronization checks before all four lanes are replaced together.
 
-No weights are bundled. Model checksum failures, missing runtime/packages and network denials are errors; the plugin does not substitute EQ or fake stems. The worker contains actual HTDemucs calls, but the official weight host is currently blocked in this cloud runtime and **real inference has not been validated**. Do not describe this build as delivering tested AI separation. See Models/README.md for licensing, verification, offline use and remaining RAM/latency acceptance.
+No weights are bundled. Model checksum failures, missing runtime/packages and network denials are errors; the plugin does not substitute EQ or fake stems. The worker contains actual HTDemucs calls, but the official weight host is now accessible and **actual CPU inference, plugin import/export and active-inference cancellation pass in Linux**. Read INFERENCE-VALIDATION.md for measured evidence and limited source-quality coverage; this does not establish AU/Logic/M1 readiness. See Models/README.md for licensing, verification, offline use and remaining RAM/latency acceptance.
 
 ## DAW transport and macOS
 

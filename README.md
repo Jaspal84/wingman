@@ -1,6 +1,6 @@
 # Wingman Pro
 
-C++20 / JUCE 8 audio and MIDI workstation plugin under active development. The Linux implementation includes real WAV recording/mixing, spectral harmonic analysis, deterministic bass/drum/melody generation and host-playhead scheduling. **Actual HTDemucs inference, macOS AU validation, Logic Pro and M1 performance are not yet verified. This is not a production-ready AI plugin release.**
+C++20 / JUCE 8 audio and MIDI workstation plugin under active development. The Linux implementation includes real WAV recording/mixing, spectral harmonic analysis, deterministic bass/drum/melody generation and host-playhead scheduling. **Real HTDemucs CPU inference now passes on a real 20-second stereo music fixture in Linux, including plugin-managed import/export and cancellation. macOS AU validation, Logic/MainStage and M1 performance remain untested. This is not a production-ready release.**
 
 ## Implemented and tested on Linux
 
@@ -16,11 +16,11 @@ C++20 / JUCE 8 audio and MIDI workstation plugin under active development. The L
 
 Actual Linux integration render using synthesized WAV fixtures. This is not a macOS/Logic screenshot or evidence of AI-separated stems.
 
-## Model support: implemented adapter, unverified inference
+## Model support: genuine CPU inference validated on Linux
 
 Model Manager starts an embedded, pinned Python worker off the audio thread. It supports explicit download/license consent, official checkpoint hash verification, offline verification, progress, cancellation and atomic synchronized stem import. There are no bundled weights or silent downloads.
 
-The Demucs/PyTorch runtime imports successfully on Linux. The official checkpoint host returned HTTP 403 and its allowlist change is not yet applied to this running environment. **No actual trained-model separation run or separation-quality/RAM benchmark has succeeded here.** The worker implementation and failure tests must not be described as tested AI separation. See [model setup and license](Models/README.md).
+The official host is accessible and the 84,141,911-byte HTDemucs checkpoint is pinned by full SHA-256. Real model execution, synchronized nonempty 24-bit stems, mono/48-kHz conversion, plugin lane export and cancellation during inference pass on Linux. Signal/format/mixture checks are measured; the fixture has quiet vocals/bass and no isolated reference stems, so broad source-quality or SDR claims are not supported. See [inference evidence](Documentation/INFERENCE-VALIDATION.md) and [model setup/license](Models/README.md).
 
 ## Build
 
@@ -67,6 +67,9 @@ Full tests use `ctest --test-dir build --output-on-failure`. `WINGMAN_TRACE_TEST
 ## Documentation
 
 - [Per-phase commits, files, tests and remaining acceptance](Documentation/PHASE-REPORT.md)
+- [Exact MacBook Air M1 Terminal/runbook commands](Documentation/MACBOOK-M1-TESTING.md)
+- [Current inference evidence](Documentation/INFERENCE-VALIDATION.md)
+- [Outstanding GUI/audio-thread/host review](Documentation/OUTSTANDING-REVIEW.md)
 - [User manual](Documentation/USER-MANUAL.md)
 - [Audit, risks and staged implementation](Documentation/IMPLEMENTATION.md)
 - [Harmonic analysis and measured synthetic accuracy](Documentation/HARMONIC-ANALYSIS.md)
@@ -78,4 +81,23 @@ Full tests use `ctest --test-dir build --output-on-failure`. `WINGMAN_TRACE_TEST
 
 ## Remaining acceptance work
 
-Verified trained-model inference and a licensed real-music benchmark; native M1 8-GB CPU/CoreML measurements; actual AU/Logic/MainStage and external MIDI drag/routing tests; annotated recorded-song analysis metrics; meter-aware generation beyond 4/4; complete piano-roll/candidate editing; lock-free session exchange and callback allocation instrumentation; signing/notarization/release packaging. Synchronous import/export/waveform/state operations can still stall the calling/UI thread. See feature documents for scope; do not infer production readiness from Linux compilation.
+Vocal-rich and isolated-source quality evaluation beyond the current real fixture; native M1 8-GB CPU/CoreML measurements; actual AU/Logic/MainStage and external MIDI drag/routing tests; annotated recorded-song analysis metrics; meter-aware generation beyond 4/4; complete piano-roll/candidate editing; lock-free session exchange and callback allocation instrumentation; signing/notarization/release packaging. Synchronous import/export/waveform/state operations can still stall the calling/UI thread. See feature documents for scope; do not infer production readiness from Linux compilation.
+
+Optional validator tests require the pinned inference runtime:
+
+```sh
+cmake -S . -B build -DWINGMAN_INFERENCE_PYTHON=/absolute/runtime/bin/python
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+```
+
+To explicitly run genuine inference through the embedded plugin worker (no silent downloads), use an installed verified checkpoint and an 8–120-second real WAV:
+
+```sh
+WINGMAN_REAL_MODELS=/absolute/models \
+WINGMAN_REAL_PYTHON=/absolute/runtime/bin/python \
+WINGMAN_REAL_INPUT=/absolute/owned-test.wav \
+ctest --test-dir build -R '^integration$' -V
+```
+
+This test completes separation/import/export and then starts another model run to cancel after real chunk processing. Normal tests report when this opt-in block is not requested. See the M1 runbook for clone/update, dependencies, native build, installation, actual-identifier AU validation and real-model commands.

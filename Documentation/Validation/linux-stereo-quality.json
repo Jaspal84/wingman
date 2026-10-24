@@ -1,0 +1,62 @@
+{
+  "input_sha256": "d364b64f5fce7759b75d88acf94c50a03e534d7b689aae597f72fef200a03dd1",
+  "input_sample_rate": 44100,
+  "expected_output_frames": 882000,
+  "output_sample_rate": 44100,
+  "duration_seconds": 20.0,
+  "input_rms": 0.16919516485634586,
+  "stems": {
+    "vocals": {
+      "sha256": "826d5bacb73546c14679bc7d0a78de108caee7b7ffc775a6ad8fb3d1c72a79ee",
+      "frames": 882000,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.00015238690157274098,
+      "peak": 0.0048754215240478516,
+      "clipped_sample_fraction": 0.0
+    },
+    "drums": {
+      "sha256": "a620c029589b3eacbacc92b2d42af5f54623808ee32159eb2e7f248286c42f5e",
+      "frames": 882000,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.08852811555551188,
+      "peak": 0.6418002843856812,
+      "clipped_sample_fraction": 0.0
+    },
+    "bass": {
+      "sha256": "b9c54816f6102cafa79df63d05c73d4108abb27721c39df224072762d038480d",
+      "frames": 882000,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.00029299945562668753,
+      "peak": 0.010465621948242188,
+      "clipped_sample_fraction": 0.0
+    },
+    "other": {
+      "sha256": "ebe0b31f7e374e2d95b90da048187c8e96f3c74da30d3fb39d5c61400765b6cd",
+      "frames": 882000,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.14094612656936006,
+      "peak": 0.7842919826507568,
+      "clipped_sample_fraction": 0.0
+    }
+  },
+  "warnings": [
+    "vocals: very quiet; this fixture does not establish semantic quality for this source",
+    "bass: very quiet; this fixture does not establish semantic quality for this source"
+  ],
+  "metric_scope": "No isolated reference stems: no source SDR/SI-SDR or perceptual accuracy is claimed.",
+  "pairwise_correlations": {
+    "vocals/drums": -0.008498666854516656,
+    "vocals/bass": 0.3747834019203175,
+    "vocals/other": -0.055737995780179496,
+    "drums/bass": 0.062364228477381004,
+    "drums/other": 0.024749132587588516,
+    "bass/other": 0.14163994449582482
+  },
+  "mixture_residual_rms": 0.004259257310829383,
+  "mixture_reconstruction_snr_db": 31.981081407729093,
+  "structural_checks_passed": true
+}

@@ -1,0 +1,61 @@
+{
+  "input_sha256": "0f25d09e0a0644fcaa8e22fa6f9dc366987b6d09f50cdba73a9c6a1c3c02437f",
+  "input_sample_rate": 48000,
+  "expected_output_frames": 264600,
+  "output_sample_rate": 44100,
+  "duration_seconds": 6.0,
+  "input_rms": 0.13521860549620293,
+  "stems": {
+    "vocals": {
+      "sha256": "26693d7e67f66688affb7ba01ced91ee602226cdaf9d9b3a84d687f8ae178212",
+      "frames": 264600,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.0001487993331150827,
+      "peak": 0.0045697689056396484,
+      "clipped_sample_fraction": 0.0
+    },
+    "drums": {
+      "sha256": "c6f6fb19e759da63bd61f2bf8f1e7121ba93216aee1c96bdf3925369543963f5",
+      "frames": 264600,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.04559935007193388,
+      "peak": 0.7343132495880127,
+      "clipped_sample_fraction": 0.0
+    },
+    "bass": {
+      "sha256": "7dc5c170e6cf15c6d6bad3e2af9ea58cf5f16cab512207dadc5734ebe478c95d",
+      "frames": 264600,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.06636538701069779,
+      "peak": 0.2512015104293823,
+      "clipped_sample_fraction": 0.0
+    },
+    "other": {
+      "sha256": "2121bde997a69fb6fda2c822a59d79c16cff02ab59b66c88ab5d0f7be29dcea7",
+      "frames": 264600,
+      "channels": 2,
+      "subtype": "PCM_24",
+      "rms": 0.10016011801856421,
+      "peak": 0.5079711675643921,
+      "clipped_sample_fraction": 0.0
+    }
+  },
+  "warnings": [
+    "vocals: very quiet; this fixture does not establish semantic quality for this source"
+  ],
+  "metric_scope": "No isolated reference stems: no source SDR/SI-SDR or perceptual accuracy is claimed.",
+  "pairwise_correlations": {
+    "vocals/drums": 0.01635816405891801,
+    "vocals/bass": -0.08661788206927824,
+    "vocals/other": -0.06852554294058533,
+    "drums/bass": 0.015935171908380754,
+    "drums/other": 0.07099053063410617,
+    "bass/other": 0.06965521641701579
+  },
+  "mixture_residual_rms": 0.0043349704359340905,
+  "mixture_reconstruction_snr_db": 29.881006255703234,
+  "structural_checks_passed": true
+}

@@ -13,6 +13,10 @@ import time
 
 MODEL_FILE = '955717e8-8726e21a.th'
 MODEL_PREFIX = '8726e21a'
+MODEL_SHA256 = '8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4'
+MODEL_LICENSE_URL = 'https://github.com/facebookresearch/demucs/blob/ef66d254cd6d558e207eeff2c4b8d053db2e77dd/LICENSE'
+MODEL_LICENSE_TEXT = 'MIT License\n\nCopyright (c) Meta Platforms, Inc. and affiliates.\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.'
+MODEL_LICENSE_SHA256 = 'cf9b17822d1fcd4ff32ccbe14183386fb3adf6f2ff92dc184130823f7fc28173'
 MODEL_DIRECTORY = 'htdemucs-v4.0.1-955717e8'
 MODEL_URL = 'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/' + MODEL_FILE
 
@@ -30,9 +34,12 @@ def verify_model(directory):
     manifest = json.loads((directory/'wingman-model.json').read_text())
     if manifest.get('model') != 'htdemucs' or manifest.get('demucs') != '4.0.1':
         raise ValueError('Unsupported model manifest/version')
+    if manifest.get('license') != 'MIT': raise ValueError('Unexpected model license metadata')
+    notice = directory/'LICENSE.txt'
+    if notice.exists() and checksum(notice) != MODEL_LICENSE_SHA256: raise ValueError('Model license notice checksum mismatch')
     expected = manifest.get('sha256', '')
-    if len(expected) != 64 or not expected.startswith(MODEL_PREFIX):
-        raise ValueError('Manifest lacks the full SHA-256 for the official checkpoint')
+    if expected != MODEL_SHA256:
+        raise ValueError('Manifest does not match the pinned official checkpoint SHA-256')
     model = directory/MODEL_FILE
     if checksum(model) != expected: raise ValueError('Model checksum mismatch')
     return model
@@ -90,12 +97,15 @@ def separate(args):
     triangle = torch.minimum(torch.arange(1,size+1),torch.arange(size,0,-1)).float()
     triangle /= triangle.max()
     inference_began = time.monotonic()
+    model_seconds = 0.0
     for offset in range(0,length,stride):
         cancelled()
         end = min(length,offset+size)
         chunk = wave[:,offset:end]
         with torch.inference_mode():
+            model_began = time.monotonic()
             prediction = apply_model(model,chunk[None],shifts=0,split=False,device='cpu',segment=segment)[0]
+            model_seconds += time.monotonic()-model_began
         weight = triangle[:end-offset]
         estimates[:,:,offset:end] += prediction[:,:,:end-offset]*weight
         weights[offset:end] += weight
@@ -120,7 +130,10 @@ def separate(args):
         peak_bytes = rss if sys.platform == 'darwin' else rss*1024
         result = dict(state='done',progress=1.0,seconds=time.monotonic()-began,peak_rss_bytes=peak_bytes,
                       sample_rate=model.samplerate,frames=length,sources=model.sources,backend='PyTorch CPU',
-                      inference_and_export_seconds=time.monotonic()-inference_began,stem_statistics=statistics)
+                      inference_and_export_seconds=time.monotonic()-inference_began,inference_seconds=model_seconds,stem_statistics=statistics,
+                      model_sha256=MODEL_SHA256,torch_version=torch.__version__,torchaudio_version=torchaudio.__version__,
+                      demucs_version=demucs.__version__,python_version=sys.version.split()[0],cpu_threads=torch.get_num_threads(),
+                      segment_seconds=segment,overlap=0.25,architecture=__import__('platform').machine())
         (output/'benchmark.json').write_text(json.dumps(result,indent=2))
         write_status(args.status,**result)
     except BaseException:
@@ -155,10 +168,11 @@ def install(args):
                 out.write(block)
                 write_status(getattr(args,'status',None),state='running',progress=min(0.95,size/expected*0.95) if expected else 0,message=f'Downloaded {size//(1024*1024)} MB')
         digest = checksum(checkpoint)
-        if not digest.startswith(MODEL_PREFIX): raise ValueError('Official model checksum prefix mismatch')
+        if digest != MODEL_SHA256: raise ValueError('Official model SHA-256 mismatch')
         if args.sha256 and digest != args.sha256: raise ValueError('Pinned full SHA-256 mismatch')
         manifest = dict(model='htdemucs',demucs='4.0.1',sha256=digest,url=MODEL_URL,bytes=size,
-                        license='MIT',runtime='torch 2.5.1 / torchaudio 2.5.1 CPU')
+                        license='MIT',license_url=MODEL_LICENSE_URL,license_sha256=MODEL_LICENSE_SHA256,runtime='torch 2.5.1 / torchaudio 2.5.1 CPU')
+        (payload/'LICENSE.txt').write_bytes(MODEL_LICENSE_TEXT.encode('utf-8'))
         (payload/'wingman-model.json').write_text(json.dumps(manifest,indent=2))
         payload.rename(destination)  # Publish checkpoint and manifest together on the same filesystem.
     print(json.dumps(manifest,indent=2))

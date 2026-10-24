@@ -1,3 +1,5 @@
+> Historical snapshot: the model-host/inference blocker described below is superseded by [INFERENCE-VALIDATION.md](INFERENCE-VALIDATION.md). macOS/Logic/M1 acceptance remains pending.
+
 # Wingman Pro implementation report — 2026-10-24
 
 This is an incremental development delivery. **The master acceptance criteria are not all complete.** Linux builds/tests do not validate AU, Logic or real trained-model separation.

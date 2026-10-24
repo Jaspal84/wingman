@@ -196,6 +196,46 @@ int main() {
         check(modelPanel.createComponentSnapshot(modelPanel.getLocalBounds()).isValid(),"model manager renders");
         p.setSessionName("Portable test session"); juce::MemoryBlock namedState;p.getStateInformation(namedState);restored.setStateInformation(namedState.getData(),static_cast<int>(namedState.getSize()));
         check(restored.sessionName()=="Portable test session","project name persists");
+        if(const auto* modelsPath=std::getenv("WINGMAN_REAL_MODELS")) {
+            const auto* runtime=std::getenv("WINGMAN_REAL_PYTHON");const auto* inputPath=std::getenv("WINGMAN_REAL_INPUT");
+            check(runtime&&inputPath,"real inference requires runtime and input environment selectors");
+            WingmanProcessor real;real.prepareToPlay(44100,512);real.configureModel(runtime,modelsPath);
+            check(real.startModelJob("separate",juce::File(inputPath)).wasOk(),"start actual model through embedded plugin worker");
+            for(int wait=0;wait<3000&&real.modelJobStatus().running;++wait)juce::Thread::sleep(100);
+            const auto done=real.modelJobStatus();std::cout<<"Real model job: "<<done.message<<"\n";
+            check(!done.running&&done.progress==1&&done.message.contains("Four stems imported"),"actual model inference imports four stems");
+            juce::WavAudioFormat sourceFormat;std::unique_ptr<juce::AudioFormatReader> realInput(sourceFormat.createReaderFor(juce::File(inputPath).createInputStream().release(),true));
+            check(realInput!=nullptr,"real reference WAV is readable");
+            const auto expectedFrames=static_cast<int>(std::ceil(realInput->lengthInSamples*44100.0/realInput->sampleRate));
+            std::array<std::shared_ptr<const wingman::Clip>,4> imported;
+            const juce::StringArray stemNames{"vocals","other","bass","drums"};
+            for(int track=0;track<4;++track){
+                const auto clip=real.trackSnapshot(track).clip;imported[static_cast<std::size_t>(track)]=clip;
+                check(clip&&clip->sampleRate==44100&&clip->audio.getNumSamples()==expectedFrames&&clip->audio.getNumChannels()==2,"actual stem synchronization");
+                check(clip->audio.getMagnitude(0,expectedFrames)>1e-8f,"actual stem has nonzero signal");
+                const auto exported=directory.getChildFile("actual-"+stemNames[track]+".wav");
+                check(real.exportWav(exported,track).wasOk(),"export actual separated lane through plugin mixer");
+                std::unique_ptr<juce::AudioFormatReader> checked(sourceFormat.createReaderFor(exported.createInputStream().release(),true));
+                check(checked&&checked->sampleRate==48000&&checked->bitsPerSample==24&&checked->numChannels==2&&checked->lengthInSamples==static_cast<juce::int64>(std::ceil(expectedFrames*48000.0/44100)),"validate actual plugin WAV export");
+                if(const auto* outputPath=std::getenv("WINGMAN_REAL_EXPORTS")) {
+                    const juce::File output(outputPath);check(output.createDirectory().wasOk(),"create requested actual export directory");
+                    const auto target=output.getChildFile(stemNames[track]+".wav");
+                    check(!target.exists()&&exported.copyFileTo(target),"preserve actual plugin exports without overwriting files");
+                }
+            }
+            auto temporary=juce::File::getSpecialLocation(juce::File::tempDirectory);
+            const auto previous=temporary.findChildFiles(juce::File::findDirectories,false,"wingman-job-*");
+            check(real.startModelJob("separate",juce::File(inputPath)).wasOk(),"start real model cancellation test");
+            for(int wait=0;wait<1500&&real.modelJobStatus().running&&real.modelJobStatus().progress==0;++wait)juce::Thread::sleep(100);
+            check(real.modelJobStatus().running&&real.modelJobStatus().progress>0,"cancel only after a genuine inference chunk completed");
+            auto runningDirectories=temporary.findChildFiles(juce::File::findDirectories,false,"wingman-job-*");
+            const auto cancelStart=juce::Time::getMillisecondCounterHiRes();real.cancelModelJob();
+            for(int wait=0;wait<100&&real.modelJobStatus().running;++wait)juce::Thread::sleep(50);
+            std::cout<<"Real cancellation latency ms: "<<juce::Time::getMillisecondCounterHiRes()-cancelStart<<"\n";
+            check(!real.modelJobStatus().running&&real.modelJobStatus().message.contains("cancelled"),"cancel active model subprocess");
+            for(int track=0;track<4;++track)check(real.trackSnapshot(track).clip==imported[static_cast<std::size_t>(track)],"cancel retains previously imported stems");
+            for(const auto& path:runningDirectories)if(!previous.contains(path))check(!path.exists(),"cancel removes owned worker temporary files");
+        } else std::cout<<"Real-inference integration not requested (WINGMAN_REAL_MODELS unset).\n";
         // Optional reproducible visual fixture, never loaded by the application itself.
         if (std::getenv("WINGMAN_SCREENSHOT")) {
             for (int lane = 0; lane < 4; ++lane) {
