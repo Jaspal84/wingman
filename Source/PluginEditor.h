@@ -8,18 +8,21 @@ public:
     ~WingmanEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent&) override;
 private:
     WingmanProcessor& processor;
     wingman::Theme theme;
     juce::TextButton record{"Record audio"}, playButton{"Play"}, stopButton{"Stop"};
     juce::ComboBox keyBox, recordTarget, ideas;
-    juce::Slider bpm;
+    juce::Slider bpm, timelineZoom, timelineScroll;
     juce::Label status;
     juce::TextEditor chordInput;
     juce::TextButton apply{"Apply chords"}, generate{"Generate MIDI"}, exportMix{"Export WAV mix"}, exportMidi{"Export MIDI"};
     juce::ToggleButton preview{"Audition chords"};
     std::array<juce::TextButton,4> imports, solos, mutes, stemExports;
     std::array<juce::Slider,4> volumes, pans;
+    juce::TextButton detect{"Detect chords/key"}, cancel{"Cancel analysis"};
+    bool analysisWasRunning = false;
     juce::TextButton models{"Model Manager"};
     float uiScale = 1;
     std::array<juce::Rectangle<int>,4> waveformBounds;

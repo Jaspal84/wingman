@@ -45,6 +45,44 @@ WingmanProcessor::WingmanProcessor()
     synth.addSound(new Sound);
     setProgression(chordText);
 }
+WingmanProcessor::~WingmanProcessor() { cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
+void WingmanProcessor::cancelAnalysis() { analysisThread.request_stop(); }
+juce::String WingmanProcessor::analysisMessage() const { const juce::ScopedLock lock(mutex); return analysisStatus; }
+wingman::HarmonicResult WingmanProcessor::analysisSnapshot() const { const juce::ScopedLock lock(mutex); return analysis; }
+juce::Result WingmanProcessor::startAnalysis(int i) {
+    const auto track = trackSnapshot(i);
+    if (!track.clip) return juce::Result::fail("Import or record audio before harmonic analysis");
+    if (analysisBusy.exchange(true)) return juce::Result::fail("An analysis is already running");
+    if (analysisThread.joinable()) analysisThread.join();
+    analysisProgress = 0;
+    { const juce::ScopedLock lock(mutex); analysisStatus = "Analysing harmony..."; }
+    analysisThread = std::jthread([this,clip = track.clip](std::stop_token stopToken) {
+        try {
+            std::vector<float> mono(static_cast<std::size_t>(clip->audio.getNumSamples()));
+            for (int s = 0; s < clip->audio.getNumSamples(); ++s)
+                mono[static_cast<std::size_t>(s)] = (clip->audio.getSample(0,s)+clip->audio.getSample(1,s))*0.5f;
+            auto result = wingman::analyseHarmony(mono.data(),static_cast<int>(mono.size()),clip->sampleRate,
+                [this,stopToken](double progress) { analysisProgress = progress; return !stopToken.stop_requested(); });
+            if (stopToken.stop_requested()) throw std::runtime_error("Analysis cancelled");
+            juce::StringArray progressionTokens;
+            double localTempo = tempo();
+            for (const auto& region : result.regions) {
+                if (region.end-region.start < 0.2 || progressionTokens.size() >= 128) continue;
+                const double beats = juce::jlimit(0.25,32.0,std::round((region.end-region.start)*localTempo/60*4)/4);
+                progressionTokens.add(juce::String(wingman::chordName(region.chord))+":"+juce::String(beats,2));
+            }
+            const juce::ScopedLock lock(mutex);
+            analysis = std::move(result);
+            if (!progressionTokens.isEmpty()) { transpose = 0; setProgression(progressionTokens.joinIntoString(" ")); }
+            const std::array<juce::String,12> keys{"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"};
+            analysisStatus = analysis.regions.empty() ? "No reliable harmonic content found" :
+                "Key " + keys[static_cast<std::size_t>(analysis.keyRoot)] + (analysis.minor ? " minor" : " major")
+                + " | confidence " + juce::String(analysis.keyConfidence*100,0) + "% | tuning " + juce::String(analysis.tuningCents,0)+" cents";
+        } catch (const std::exception& error) { const juce::ScopedLock lock(mutex); analysisStatus = error.what(); }
+        analysisBusy = false;
+    });
+    return juce::Result::ok();
+}
 bool WingmanProcessor::isBusesLayoutSupported(const BusesLayout& layout) const {
     const auto out = layout.getMainOutputChannelSet();
     const auto in = layout.getMainInputChannelSet();
@@ -98,7 +136,7 @@ void WingmanProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::MidiB
         if (generated && !chords.empty()) {
             const double startBeat = seconds * bpm / 60.0;
             const double endBeat = (seconds + count / engineRate) * bpm / 60.0;
-            const double length = chords.size() * 4.0;
+            const double length = wingman::progressionBeats(chords);
             const auto firstLoop = static_cast<juce::int64>(std::floor(startBeat / length));
             const auto lastLoop = static_cast<juce::int64>(std::floor(endBeat / length));
             for (auto loop = firstLoop; loop <= lastLoop; ++loop)
@@ -175,10 +213,10 @@ juce::Result WingmanProcessor::setProgression(const juce::String& text) {
     for (const auto& token : tokens) {
         if (token.isEmpty()) continue;
         auto chord = wingman::parseChord(token.toStdString());
-        if (!chord) return juce::Result::fail("Use major/minor chord names: C Am F G, F# or Bb");
+        if (!chord) return juce::Result::fail("Use C, Am, G7, Cmaj7, Dm7, Csus2, Csus4, Bdim; optional ^inversion:beats");
         parsed.push_back(*chord);
     }
-    if (parsed.empty() || parsed.size() > 16) return juce::Result::fail("Enter 1-16 chords, one bar per chord");
+    if (parsed.empty() || parsed.size() > 128) return juce::Result::fail("Enter 1-128 valid chord tokens");
     const juce::ScopedLock lock(mutex);
     chords = std::move(parsed); chordText = text.trim(); rebuildMidi();
     return juce::Result::ok();
@@ -217,7 +255,7 @@ juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
             auto msg = sequence.getEventPointer(i)->message;
             msg.setTimeStamp(msg.getTimeStamp()*960.0); events.addEvent(msg);
         }
-        auto end = juce::MidiMessage::endOfTrack(); end.setTimeStamp(chords.size()*4.0*960); events.addEvent(end);
+        auto end = juce::MidiMessage::endOfTrack(); end.setTimeStamp(wingman::progressionBeats(chords)*960); events.addEvent(end);
     }
     juce::MidiFile midi; midi.setTicksPerQuarterNote(960); midi.addTrack(events);
     juce::TemporaryFile temporary(file);

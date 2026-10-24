@@ -7,25 +7,74 @@
 #include <vector>
 
 namespace wingman {
+enum class ChordQuality { Major, Minor, Dominant7, Major7, Minor7, Sus2, Sus4, Diminished };
 struct Chord {
     int root = 0;
     bool minor = false;
-    std::array<int, 3> notes(int transpose = 0) const {
-        return {48 + root + transpose, 48 + root + transpose + (minor ? 3 : 4), 55 + root + transpose};
+    ChordQuality quality = ChordQuality::Major;
+    int inversion = 0;
+    double beats = 4;
+    std::vector<int> notes(int transpose = 0) const {
+        const auto q = quality == ChordQuality::Major && minor ? ChordQuality::Minor : quality;
+        std::vector<int> intervals;
+        switch (q) {
+            case ChordQuality::Major: intervals = {0,4,7}; break;
+            case ChordQuality::Minor: intervals = {0,3,7}; break;
+            case ChordQuality::Dominant7: intervals = {0,4,7,10}; break;
+            case ChordQuality::Major7: intervals = {0,4,7,11}; break;
+            case ChordQuality::Minor7: intervals = {0,3,7,10}; break;
+            case ChordQuality::Sus2: intervals = {0,2,7}; break;
+            case ChordQuality::Sus4: intervals = {0,5,7}; break;
+            case ChordQuality::Diminished: intervals = {0,3,6}; break;
+        }
+        for (auto& note : intervals) note += 48+root+transpose;
+        for (int i = 0; i < inversion && i < static_cast<int>(intervals.size()); ++i) {
+            const int first = intervals.front()+12; intervals.erase(intervals.begin()); intervals.push_back(first);
+        }
+        return intervals;
     }
 };
-inline std::optional<Chord> parseChord(const std::string& s) {
+inline std::optional<Chord> parseChord(const std::string& token) {
+    if (token.empty()) return {};
+    std::string s = token;
+    Chord chord;
+    try {
+        if (auto p = s.find(':'); p != std::string::npos) {
+            std::size_t used = 0; auto duration = s.substr(p+1); chord.beats = std::stod(duration,&used);
+            if (used != duration.size() || !std::isfinite(chord.beats) || chord.beats < 0.25 || chord.beats > 32) return {};
+            s.resize(p);
+        }
+        if (auto p = s.find('^'); p != std::string::npos) {
+            const auto value = s.substr(p+1);
+            if (value.size() != 1 || value[0] < '0' || value[0] > '3') return {};
+            chord.inversion = value[0]-'0'; s.resize(p);
+        }
+    } catch (...) { return {}; }
     if (s.empty()) return {};
-    const std::string names = "C D EF G A B";
-    const auto index = names.find(s[0]);
+    const auto index = std::string("C D EF G A B").find(s[0]);
     if (index == std::string::npos || s[0] == ' ') return {};
-    int root = static_cast<int>(index);
-    std::size_t p = 1;
+    int root = static_cast<int>(index); std::size_t p = 1;
     if (p < s.size() && (s[p] == '#' || s[p] == 'b')) root += s[p++] == '#' ? 1 : -1;
-    const bool minor = p < s.size() && s[p] == 'm';
-    if (minor) ++p;
-    if (p != s.size()) return {};
-    return Chord{(root + 12) % 12, minor};
+    chord.root = (root+12)%12;
+    const auto suffix = s.substr(p);
+    if (suffix.empty()) chord.quality = ChordQuality::Major;
+    else if (suffix == "m") chord.quality = ChordQuality::Minor;
+    else if (suffix == "7") chord.quality = ChordQuality::Dominant7;
+    else if (suffix == "maj7") chord.quality = ChordQuality::Major7;
+    else if (suffix == "m7") chord.quality = ChordQuality::Minor7;
+    else if (suffix == "sus2") chord.quality = ChordQuality::Sus2;
+    else if (suffix == "sus4") chord.quality = ChordQuality::Sus4;
+    else if (suffix == "dim") chord.quality = ChordQuality::Diminished;
+    else return {};
+    chord.minor = chord.quality == ChordQuality::Minor || chord.quality == ChordQuality::Minor7;
+    if (chord.inversion >= static_cast<int>(chord.notes().size())) return {};
+    return chord;
+}
+inline double progressionBeats(const std::vector<Chord>& chords) { double total = 0; for (const auto& c : chords) total += c.beats; return total; }
+inline std::string chordName(const Chord& chord) {
+    const std::array<std::string,12> roots{"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"};
+    const std::array<std::string,8> suffix{"","m","7","maj7","m7","sus2","sus4","dim"};
+    return roots[static_cast<std::size_t>(chord.root)]+suffix[static_cast<std::size_t>(chord.quality)];
 }
 // Onset-energy autocorrelation. Confidence reflects periodicity, not harmonic analysis.
 inline std::optional<double> detectBpm(const float* samples, int count, double sampleRate) {

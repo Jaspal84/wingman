@@ -8,12 +8,22 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     const auto size = processor.editorSize();
     setResizable(true,false); setResizeLimits(960,608,1920,1216);
     setSize(size.first,size.second);
-    addAndMakeVisible(models);
+    addAndMakeVisible(models); addAndMakeVisible(detect); addAndMakeVisible(cancel);
+    detect.setTooltip("Analyse the selected input lane in a background worker; replaces the chord progression");
+    detect.onClick = [this] { showResult(processor.startAnalysis(recordTarget.getSelectedId()-1),"Harmonic analysis started"); };
+    cancel.onClick = [this] { processor.cancelAnalysis(); };
     models.onClick = [] {
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"Model Manager",
             "HTDemucs 4-stem model: not configured.\nAI separation is unavailable until verified weights and the pinned Python worker are installed.\n\nNo model is downloaded automatically. See Models/README.md for installation, license and checksums.","Close");
     };
     for (auto* component : std::initializer_list<juce::Component*>{&record,&playButton,&stopButton,&keyBox,&recordTarget,&bpm,&status,&chordInput,&apply,&generate,&exportMix,&exportMidi,&preview,&ideas}) addAndMakeVisible(component);
+    addAndMakeVisible(timelineZoom); addAndMakeVisible(timelineScroll);
+    timelineZoom.setRange(1,8,0.25); timelineZoom.setValue(1); timelineZoom.setTooltip("Chord timeline zoom");
+    timelineScroll.setRange(0,1,0.001); timelineScroll.setTooltip("Chord timeline horizontal scroll");
+    for (auto* control : {&timelineZoom,&timelineScroll}) {
+        control->setSliderStyle(juce::Slider::LinearHorizontal); control->setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
+        control->onValueChange = [this] { repaint(); };
+    }
     keyBox.addItemList(keyNames,1);
     keyBox.setTooltip("Transpose the written chord progression by this many semitones from C");
     keyBox.onChange = [this] { processor.setKey(keyBox.getSelectedId()-1); };
@@ -51,7 +61,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
         stemExports[n].setButtonText("Export " + names[n]); stemExports[n].onClick = [this,i] { chooseExport(false,i); };
     }
     chordInput.setMultiLine(false); chordInput.setText(processor.progression());
-    chordInput.setTooltip("1-16 major/minor chords: C Am F G. Each chord lasts four beats.");
+    chordInput.setTooltip("1-128 chords: C Am G7 Cmaj7 Dm7 Csus2 Csus4 Bdim. Cmaj7^1:2 sets inversion 1, duration 2 beats.");
     auto applyChords = [this] { showResult(processor.setProgression(chordInput.getText()),"Progression updated; one bar per chord"); repaint(); };
     apply.onClick = applyChords; chordInput.onReturnKey = applyChords;
     generate.onClick = [this] {
@@ -125,6 +135,11 @@ void WingmanEditor::refresh() {
     repaint();
 }
 void WingmanEditor::timerCallback() {
+    const bool running = processor.analysisIsRunning();
+    cancel.setEnabled(running); detect.setEnabled(!running);
+    if (running) status.setText("Analysing harmony: "+juce::String(processor.analysisPercent()*100,0)+"%",juce::dontSendNotification);
+    else if (analysisWasRunning) status.setText(processor.analysisMessage(),juce::dontSendNotification);
+    analysisWasRunning = running;
     // Host state can change while the editor remains open; preserve active text edits.
     if (!chordInput.hasKeyboardFocus(true) && chordInput.getText() != processor.progression()) chordInput.setText(processor.progression());
     refresh();
@@ -163,9 +178,11 @@ void WingmanEditor::resized() {
         waveformBounds[n] = {282,y+4,598,59}; stemExports[n].setBounds(912,y+19,252,31); rebuildWaveform(i);
     }
     ideas.setBounds(124,499,240,32); chordInput.setBounds(28,552,594,34); apply.setBounds(638,552,126,34);
+    detect.setBounds(382,499,190,32); cancel.setBounds(584,499,180,32);
     chordBounds = {28,602,852,92}; midiBounds = {914,557,248,78};
     generate.setBounds(912,644,252,32); preview.setBounds(912,680,160,28);
     exportMidi.setBounds(1044,499,120,32); exportMix.setBounds(912,455,252,30);
+    timelineZoom.setBounds(768,548,112,18); timelineScroll.setBounds(768,574,112,18);
     status.setBounds(24,720,1152,28);
     for (auto* child : getChildren()) child->setTransform(juce::AffineTransform::scale(uiScale));
 }
@@ -203,17 +220,35 @@ void WingmanEditor::paint(juce::Graphics& g) {
             if (x <= 1) { g.setColour(juce::Colours::white.withAlpha(0.8f)); g.drawVerticalLine(bounds.getX()+static_cast<int>(x*bounds.getWidth()),static_cast<float>(bounds.getY()),static_cast<float>(bounds.getBottom())); }
         }
     }
+    const auto harmony = processor.analysisSnapshot();
+    for (const auto& region : harmony.regions) {
+        const auto x = 282.0f+static_cast<float>(region.start/duration*598);
+        const auto width = static_cast<float>((region.end-region.start)/duration*598);
+        g.setColour(wingman::accent.withAlpha(0.25f)); g.fillRect(x,122.0f,width,12.0f);
+        g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(10.0f));
+        g.drawText(juce::String(wingman::chordName(region.chord)),static_cast<int>(x),121,static_cast<int>(width),13,juce::Justification::centredLeft);
+    }
     g.setColour(juce::Colours::lightgrey); g.setFont(juce::FontOptions(12.0f));
-    g.drawText("CHORD PROGRESSION | 4 beats per chord | MIDI loops while playing",28,532,800,18,juce::Justification::centredLeft);
+    g.drawText("CHORDS | suffix ^inversion:beats | MIDI loops while playing",28,532,800,18,juce::Justification::centredLeft);
     g.setColour(juce::Colour{0xff101219}); g.fillRoundedRectangle(chordBounds.toFloat(),6); g.fillRoundedRectangle(midiBounds.toFloat(),6);
     auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
     if (!tokens.isEmpty()) {
-        const float width = static_cast<float>(chordBounds.getWidth())/tokens.size();
+        double totalBeats = 0;
+        for (const auto& token : tokens) if (auto chord = wingman::parseChord(token.toStdString())) totalBeats += chord->beats;
+        totalBeats = std::max(0.25,totalBeats);
+        double cursor = 0;
         for (int i = 0; i < tokens.size(); ++i) {
-            auto r = juce::Rectangle<float>(chordBounds.getX()+i*width,static_cast<float>(chordBounds.getY()),width-2,static_cast<float>(chordBounds.getHeight()));
+            auto chord = wingman::parseChord(tokens[i].toStdString());
+            const double durationBeats = chord ? chord->beats : 4;
+            const float width = static_cast<float>(durationBeats/totalBeats*chordBounds.getWidth()*timelineZoom.getValue());
+            const float left = chordBounds.getX()+static_cast<float>((cursor/totalBeats-timelineScroll.getValue()*(1-1/timelineZoom.getValue()))*chordBounds.getWidth()*timelineZoom.getValue());
+            cursor += durationBeats;
+            auto r = juce::Rectangle<float>(left,static_cast<float>(chordBounds.getY()),std::max(1.0f,width-2),static_cast<float>(chordBounds.getHeight()));
+            g.saveState(); g.reduceClipRegion(chordBounds);
             g.setColour(wingman::trackColours[static_cast<std::size_t>(i%4)].withAlpha(0.18f)); g.fillRect(r);
             g.setColour(wingman::trackColours[static_cast<std::size_t>(i%4)]); g.fillRect(r.removeFromTop(3));
             g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(18.0f)); g.drawText(tokens[i],r,juce::Justification::centred);
+            g.restoreState();
             if (processor.midiIsGenerated()) if (auto chord = wingman::parseChord(tokens[i].toStdString()))
                 for (auto note : chord->notes(processor.key())) {
                     const float x = midiBounds.getX()+i*static_cast<float>(midiBounds.getWidth())/tokens.size();
@@ -221,5 +256,41 @@ void WingmanEditor::paint(juce::Graphics& g) {
                     g.setColour(wingman::accent); g.fillRoundedRectangle(x+3,y,static_cast<float>(midiBounds.getWidth())/tokens.size()-5,3,1);
                 }
         }
+    }
+}
+
+void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
+    const auto point = event.position/uiScale;
+    if (!chordBounds.toFloat().contains(point)) return;
+    auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
+    double total = 0; for (const auto& token : tokens) if (auto chord = wingman::parseChord(token.toStdString())) total += chord->beats;
+    const double clicked = ((point.x-chordBounds.getX())/chordBounds.getWidth()/timelineZoom.getValue()
+        +timelineScroll.getValue()*(1-1/timelineZoom.getValue()))*total;
+    double cursor = 0;
+    for (int i = 0; i < tokens.size(); ++i) {
+        auto chord = wingman::parseChord(tokens[i].toStdString()); if (!chord) continue;
+        if (clicked >= cursor && clicked < cursor+chord->beats) {
+            auto* dialog = new juce::AlertWindow("Edit chord","Root, quality, inversion and duration",juce::MessageBoxIconType::NoIcon);
+            dialog->addComboBox("root",keyNames,"Root"); dialog->getComboBoxComponent("root")->setSelectedId(chord->root+1);
+            dialog->addComboBox("quality",{"Major","Minor","Dominant 7","Major 7","Minor 7","Sus2","Sus4","Diminished"},"Quality");
+            dialog->getComboBoxComponent("quality")->setSelectedId(static_cast<int>(chord->quality)+1);
+            dialog->addComboBox("inversion",{"Root position","First","Second","Third (seventh chords)"},"Inversion");
+            dialog->getComboBoxComponent("inversion")->setSelectedId(chord->inversion+1);
+            dialog->addTextEditor("beats",juce::String(chord->beats),"Duration in beats (0.25-32)");
+            dialog->addButton("Apply",1); dialog->addButton("Cancel",0);
+            dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe = juce::Component::SafePointer<WingmanEditor>(this),dialog,tokens,i](int result) mutable {
+                if (!safe || result != 1) return;
+                const juce::StringArray suffix{"","m","7","maj7","m7","sus2","sus4","dim"};
+                const int root = dialog->getComboBoxComponent("root")->getSelectedId()-1;
+                const int quality = dialog->getComboBoxComponent("quality")->getSelectedId()-1;
+                tokens.set(i,keyNames[root]+suffix[quality]+"^"+juce::String(dialog->getComboBoxComponent("inversion")->getSelectedId()-1)+":"+dialog->getTextEditorContents("beats"));
+                const auto text = tokens.joinIntoString(" ");
+                const auto outcome = safe->processor.setProgression(text);
+                if (outcome.wasOk()) safe->chordInput.setText(text);
+                safe->showResult(outcome,"Chord updated");
+            }),true);
+            break;
+        }
+        cursor += chord->beats;
     }
 }

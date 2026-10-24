@@ -2,11 +2,14 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
 #include "MIDI/ChordSequence.h"
+#include "AI/ChordDetection/HarmonicAnalysis.h"
+#include <thread>
+#include <atomic>
 
 class WingmanProcessor final : public juce::AudioProcessor {
 public:
     WingmanProcessor();
-    ~WingmanProcessor() override = default;
+    ~WingmanProcessor() override;
     void prepareToPlay(double, int) override;
     void releaseResources() override;
     using juce::AudioProcessor::processBlock;
@@ -52,6 +55,12 @@ public:
     bool isRecording() const;
     juce::String detectTempo(int);
     bool midiIsGenerated() const;
+    juce::Result startAnalysis(int);
+    void cancelAnalysis();
+    bool analysisIsRunning() const { return analysisBusy.load(); }
+    double analysisPercent() const { return analysisProgress.load(); }
+    juce::String analysisMessage() const;
+    wingman::HarmonicResult analysisSnapshot() const;
 private:
     mutable juce::CriticalSection mutex;
     std::array<wingman::Track,4> tracks;
@@ -64,6 +73,11 @@ private:
     juce::AudioBuffer<float> recordBuffer;
     int recordSamples = 0, recordTrack = 0;
     juce::Synthesiser synth;
+    std::atomic<bool> analysisBusy{false};
+    std::atomic<double> analysisProgress{0};
+    juce::String analysisStatus;
+    wingman::HarmonicResult analysis;
+    std::jthread analysisThread;
     void rebuildMidi();
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WingmanProcessor)
 };

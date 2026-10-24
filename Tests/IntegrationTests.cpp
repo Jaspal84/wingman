@@ -106,6 +106,20 @@ int main() {
         restored.setStateInformation(extendedState.getData(),static_cast<int>(extendedState.getSize()));
         check(restored.trackSnapshot(0).pan == 1 && restored.editorSize() == std::pair<int,int>{1440,912},"persist pan and editor dimensions");
         p.setEditorSize(1200,760);
+        const auto harmonicSource = directory.getChildFile("harmony.wav");
+        {
+            juce::AudioBuffer<float> tones(2,96000); tones.clear();
+            for (int note : {48,52,55}) for (int i=0;i<96000;++i) for (int ch=0;ch<2;++ch)
+                tones.addSample(ch,i,static_cast<float>(0.15*std::sin(juce::MathConstants<double>::twoPi*juce::MidiMessage::getMidiNoteInHertz(note)*i/48000)));
+            std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(harmonicSource),48000,2,24,{},0));
+            check(writer && writer->writeFromAudioSampleBuffer(tones,0,96000),"harmonic audio fixture");
+        }
+        check(p.importWav(3,harmonicSource).wasOk() && p.startAnalysis(3).wasOk(),"background harmonic analysis start");
+        for (int wait=0;wait<1000 && p.analysisIsRunning();++wait) juce::Thread::sleep(5);
+        const auto harmony = p.analysisSnapshot();
+        check(!p.analysisIsRunning() && !harmony.regions.empty() && harmony.regions.front().chord.root==0,"background analysis completes with detected C chord");
+        check(p.progression().contains("C:") && p.key()==0,"detected duration progression applied");
+        p.cancelAnalysis();
         // Optional reproducible visual fixture, never loaded by the application itself.
         if (std::getenv("WINGMAN_SCREENSHOT")) {
             for (int lane = 0; lane < 4; ++lane) {

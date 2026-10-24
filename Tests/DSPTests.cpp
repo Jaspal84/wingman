@@ -5,13 +5,13 @@ static int checks = 0;
 static void check(bool ok, const char* text) { ++checks; if (!ok) { std::cerr << "FAIL: " << text << '\n'; std::exit(1); } }
 int main() {
     using namespace wingman;
-    check(parseChord("C")->notes() == std::array<int,3>{48,52,55},"C major voicing");
-    check(parseChord("Am")->notes() == std::array<int,3>{57,60,64},"A minor voicing");
+    check(parseChord("C")->notes() == std::vector<int>{48,52,55},"C major voicing");
+    check(parseChord("Am")->notes() == std::vector<int>{57,60,64},"A minor voicing");
     check(parseChord("Bb")->root == 10,"flat root");
     check(parseChord("F#m")->root == 6 && parseChord("F#m")->minor,"sharp minor");
     check(parseChord("Cb")->root == 11,"enharmonic root");
-    for (auto text : {"", "H", "Cmaj7", "Cmgarbage", " ", "c", "C##"}) check(!parseChord(text),"invalid chord rejected");
-    check(parseChord("C")->notes(8) == std::array<int,3>{56,60,63},"key transposition");
+    for (auto text : {"", "H", "Cmgarbage", " ", "c", "C##"}) check(!parseChord(text),"invalid chord rejected");
+    check(parseChord("C")->notes(8) == std::vector<int>{56,60,63},"key transposition");
     const double rate = 44100;
     std::vector<float> samples(static_cast<std::size_t>(rate*12));
     for (int beat = 0; beat < 24; ++beat) for (int i = 0; i < 1000; ++i)
