@@ -1,14 +1,14 @@
 #pragma once
 #include "ModelTypes.h"
 #include "WingmanWorkerData.h"
-#include <thread>
+#include "Threading/BackgroundThread.h"
 #include <atomic>
 namespace wingman {
 class ModelJob {
     mutable juce::CriticalSection statusMutex;
     ModelJobInfo info;
     std::atomic<bool> busy{false};
-    std::jthread worker;
+    BackgroundThread worker;
     void status(double progress,const juce::String& message) { const juce::ScopedLock lock(statusMutex);info.progress=progress;info.message=message; }
 public:
     ~ModelJob(){cancel();if(worker.joinable())worker.join();}
@@ -22,7 +22,7 @@ public:
         if(busy.exchange(true))return juce::Result::fail("A model operation is already running");
         if(worker.joinable())worker.join();
         status(0,"Starting "+action+"...");
-        worker=std::jthread([this,python,models,action,input,onStems](std::stop_token token){
+        worker.start([this,python,models,action,input,onStems](CancellationToken token){
             auto directory=juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("wingman-job-"+juce::Uuid().toString());
             struct Cleanup {juce::File path,staging;bool keep=false;~Cleanup(){if(!keep){path.deleteRecursively();if(staging!=juce::File{})staging.deleteRecursively();}}} cleanup{directory,{}};
             try {

@@ -1,4 +1,5 @@
 #include "Host/Transport.h"
+#include "Threading/BackgroundThread.h"
 #include <iostream>
 #include <stdexcept>
 int checks=0;void check(bool ok,const char* text){++checks;if(!ok)throw std::runtime_error(text);}
@@ -17,5 +18,8 @@ int main(){using namespace wingman;try{
     frame.bpm=std::nan("");check(!clock.resolve(frame,480,48000).valid,"nonfinite tempo rejected");
     frame.bpm=120;frame.ppq=-1;frame.seconds=-0.5;check(clock.resolve(frame,480,48000).valid,"negative preroll supported");
     frame.denominator=3;check(!clock.resolve(frame,480,48000).valid,"invalid meter rejected");
+    std::atomic<bool> started{false},cancelled{false};
+    {BackgroundThread worker;worker.start([&](CancellationToken token){started=true;while(!token.stop_requested())std::this_thread::yield();cancelled=true;});
+     while(!started)std::this_thread::yield();worker.request_stop();worker.join();check(cancelled,"portable worker cooperative cancellation");}
     std::cout<<checks<<" transport checks passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

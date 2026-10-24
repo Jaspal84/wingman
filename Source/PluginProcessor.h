@@ -9,7 +9,7 @@ namespace wingman { class ModelJob; }
 #include "MIDI/PatternSequence.h"
 #include "Generation/State.h"
 #include "AI/ChordDetection/HarmonicAnalysis.h"
-#include <thread>
+#include "Threading/BackgroundThread.h"
 #include <atomic>
 
 class WingmanProcessor final : public juce::AudioProcessor {
@@ -118,7 +118,7 @@ private:
     std::atomic<double> analysisProgress{0};
     juce::String analysisStatus;
     wingman::HarmonicResult analysis;
-    std::jthread analysisThread;
+    wingman::BackgroundThread analysisThread;
     std::unique_ptr<wingman::ModelJob> modelJob;
     juce::String inferencePython,inferenceModels;
     std::atomic<std::uint64_t> audioRevision{0};

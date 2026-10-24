@@ -24,7 +24,7 @@ juce::Result WingmanProcessor::startAnalysis(int i) {
     analysisProgress = 0;
     { const juce::ScopedLock lock(mutex); analysisStatus = "Analysing harmony..."; }
     const auto revision=audioRevision.load();
-    analysisThread = std::jthread([this,clip = track.clip,revision](std::stop_token stopToken) {
+    analysisThread.start([this,clip = track.clip,revision](wingman::CancellationToken stopToken) {
         try {
             std::vector<float> mono(static_cast<std::size_t>(clip->audio.getNumSamples()));
             for (int s = 0; s < clip->audio.getNumSamples(); ++s)

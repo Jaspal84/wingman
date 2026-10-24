@@ -171,7 +171,7 @@ int main() {
         released=0;for(auto metadata:midi)released+=metadata.getMessage().isNoteOff();check(released==3,"bypass releases generated notes");
         hosted.setPlayHead(nullptr);hosted.setHostSync(false);
         WingmanProcessor stress;stress.prepareToPlay(48000,512);stress.importWav(0,source);stress.play();
-        std::jthread controls([&]{for(int i=0;i<1000;++i)stress.setTrackMix(0,static_cast<float>(i%100)/100,false,false);});
+        std::thread controls([&]{for(int i=0;i<1000;++i)stress.setTrackMix(0,static_cast<float>(i%100)/100,false,false);});
         for(int blockIndex=0;blockIndex<100;++blockIndex){midi.clear();stress.processBlock(block,midi);check(std::isfinite(block.getSample(0,100))&&block.getMagnitude(0,512)<=1,"concurrent control edits produce bounded finite audio");}
         controls.join();
         check(p.importStemSet({source,source,source,source}).wasOk(),"atomic import of synchronized WAV set (not inference)");
