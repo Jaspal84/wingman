@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "AI/ModelManager/ModelJob.h"
 #include <limits>
 namespace {
 constexpr double maxClipSeconds = 120.0;
@@ -8,9 +9,10 @@ bool validTrack(int i) { return i >= 0 && i < 4; }
 WingmanProcessor::WingmanProcessor()
     : AudioProcessor(BusesProperties().withInput("Input", juce::AudioChannelSet::stereo(), true)
                                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)) {
+    modelJob=std::make_unique<wingman::ModelJob>();
     setProgression(chordText);
 }
-WingmanProcessor::~WingmanProcessor() { cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
+WingmanProcessor::~WingmanProcessor() { modelJob.reset(); cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
 void WingmanProcessor::cancelAnalysis() { analysisThread.request_stop(); }
 juce::String WingmanProcessor::analysisMessage() const { const juce::ScopedLock lock(mutex); return analysisStatus; }
 wingman::HarmonicResult WingmanProcessor::analysisSnapshot() const { const juce::ScopedLock lock(mutex); return analysis; }
@@ -21,7 +23,8 @@ juce::Result WingmanProcessor::startAnalysis(int i) {
     if (analysisThread.joinable()) analysisThread.join();
     analysisProgress = 0;
     { const juce::ScopedLock lock(mutex); analysisStatus = "Analysing harmony..."; }
-    analysisThread = std::jthread([this,clip = track.clip](std::stop_token stopToken) {
+    const auto revision=audioRevision.load();
+    analysisThread = std::jthread([this,clip = track.clip,revision](std::stop_token stopToken) {
         try {
             std::vector<float> mono(static_cast<std::size_t>(clip->audio.getNumSamples()));
             for (int s = 0; s < clip->audio.getNumSamples(); ++s)
@@ -29,6 +32,7 @@ juce::Result WingmanProcessor::startAnalysis(int i) {
             auto result = wingman::analyseHarmony(mono.data(),static_cast<int>(mono.size()),clip->sampleRate,
                 [this,stopToken](double progress) { analysisProgress = progress; return !stopToken.stop_requested(); });
             if (stopToken.stop_requested()) throw std::runtime_error("Analysis cancelled");
+            if(audioRevision.load()!=revision) throw std::runtime_error("Audio changed; rerun harmonic analysis");
             juce::StringArray progressionTokens;
             double localTempo = tempo();
             for (const auto& region : result.regions) {
@@ -37,6 +41,7 @@ juce::Result WingmanProcessor::startAnalysis(int i) {
                 progressionTokens.add(juce::String(wingman::chordName(region.chord))+":"+juce::String(beats,2));
             }
             const juce::ScopedLock lock(mutex);
+            if(audioRevision.load()!=revision)throw std::runtime_error("Audio changed; rerun harmonic analysis");
             analysis = std::move(result);
             if (!progressionTokens.isEmpty()) { transpose = 0; setProgression(progressionTokens.joinIntoString(" ")); }
             const std::array<juce::String,12> keys{"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"};
@@ -184,6 +189,8 @@ void WingmanProcessor::setTrackPan(int i, float pan) {
     if (!validTrack(i) || !std::isfinite(pan)) return;
     const juce::ScopedLock lock(mutex); tracks[static_cast<std::size_t>(i)].pan = juce::jlimit(-1.0f,1.0f,pan);
 }
+juce::String WingmanProcessor::sessionName()const{const juce::ScopedLock lock(mutex);return projectTitle;}
+void WingmanProcessor::setSessionName(const juce::String& value){const juce::ScopedLock lock(mutex);projectTitle=value.trim().substring(0,120);}
 void WingmanProcessor::setEditorSize(int width, int height) {
     const juce::ScopedLock lock(mutex); editorWidth = juce::jlimit(960,1920,width); editorHeight = juce::jlimit(608,1216,height);
 }
@@ -206,6 +213,7 @@ juce::Result WingmanProcessor::importWav(int i, const juce::File& file) {
         if (!std::isfinite(clip->audio.getSample(ch,sample))) return juce::Result::fail("WAV contains nonfinite samples");
     const juce::ScopedLock lock(mutex);
     tracks[static_cast<std::size_t>(i)].clip = std::move(clip);
+    ++audioRevision; analysis={};
     return juce::Result::ok();
 }
 juce::String WingmanProcessor::detectTempo(int i) {
@@ -311,6 +319,7 @@ juce::Result WingmanProcessor::finishRecording() {
     for (int ch = 0; ch < 2; ++ch) clip->audio.copyFrom(ch,0,recordBuffer,ch,0,recordSamples);
     clip->sampleRate = engineRate; clip->name = "Recorded input";
     tracks[static_cast<std::size_t>(recordTrack)].clip = std::move(clip);
+    ++audioRevision; analysis={};
     return juce::Result::ok();
 }
 juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
@@ -367,6 +376,7 @@ juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
 void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
     juce::ValueTree state("Wingman");
     const juce::ScopedLock lock(mutex);
+    state.setProperty("projectTitle",projectTitle,nullptr); state.setProperty("inferencePython",inferencePython,nullptr); state.setProperty("inferenceModels",inferenceModels,nullptr);
     state.setProperty("width",editorWidth,nullptr); state.setProperty("height",editorHeight,nullptr);
     state.setProperty("hostSync",syncEnabled,nullptr); state.setProperty("version",1,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
     state.setProperty("chords",chordText,nullptr); state.setProperty("generated",generated,nullptr); state.setProperty("preview",previewEnabled,nullptr);
@@ -423,6 +433,9 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
     const juce::ScopedLock lock(mutex);
     if (setProgression(state["chords"].toString()).failed()) return;
     setEditorSize(state.getProperty("width",1200),state.getProperty("height",760));
+    projectTitle=state.getProperty("projectTitle","Untitled session").toString().substring(0,120);
+    inferencePython=state.getProperty("inferencePython","").toString(); inferenceModels=state.getProperty("inferenceModels","").toString();
+    ++audioRevision; analysis={};
     tracks = std::move(restored); bpm = juce::jlimit(40.0,240.0,restoredBpm); transpose = juce::jlimit(0,11,static_cast<int>(state["key"]));
     activePart = -1; for (auto& part : parts) part.clear();
     if (const auto* bytes = state["patterns"].getBinaryData()) {
@@ -447,3 +460,32 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
 }
 juce::AudioProcessorEditor* WingmanProcessor::createEditor() { return new WingmanEditor(*this); }
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new WingmanProcessor; }
+
+void WingmanProcessor::configureModel(const juce::String& python,const juce::String& models){const juce::ScopedLock lock(mutex);inferencePython=python;inferenceModels=models;}
+std::pair<juce::String,juce::String> WingmanProcessor::modelConfig()const{const juce::ScopedLock lock(mutex);return {inferencePython,inferenceModels};}
+wingman::ModelJobInfo WingmanProcessor::modelJobStatus()const{return modelJob->snapshot();}
+void WingmanProcessor::cancelModelJob(){modelJob->cancel();}
+juce::Result WingmanProcessor::startModelJob(const juce::String& action,const juce::File& input,bool consent){
+    if(action=="install"&&!consent)return juce::Result::fail("Explicit model download/license consent is required");
+    const auto config=modelConfig();
+    if(config.first.isEmpty()||config.second.isEmpty())return juce::Result::fail("Configure Python and model directory first");
+    return modelJob->start(juce::File(config.first),juce::File(config.second),action,input,[this](const juce::File& output){
+        return importStemSet({output.getChildFile("vocals.wav"),output.getChildFile("other.wav"),output.getChildFile("bass.wav"),output.getChildFile("drums.wav")});
+    });
+}
+juce::Result WingmanProcessor::importStemSet(const std::array<juce::File,4>& files){
+    std::array<std::shared_ptr<const wingman::Clip>,4> loaded;
+    for(int i=0;i<4;++i){
+        juce::WavAudioFormat format;auto input=files[static_cast<std::size_t>(i)].createInputStream();
+        if(!input)return juce::Result::fail("A separated stem is missing");
+        std::unique_ptr<juce::AudioFormatReader> reader(format.createReaderFor(input.release(),true));
+        if(!reader||reader->numChannels!=2||reader->sampleRate<8000||reader->sampleRate>192000||reader->lengthInSamples<=0||reader->lengthInSamples>reader->sampleRate*120)return juce::Result::fail("Invalid separated stem format/length");
+        if(i && (reader->sampleRate!=loaded[0]->sampleRate||reader->lengthInSamples!=loaded[0]->audio.getNumSamples()))return juce::Result::fail("Separated stems are not synchronized");
+        auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=reader->sampleRate;clip->name=files[static_cast<std::size_t>(i)].getFileName();clip->audio.setSize(2,static_cast<int>(reader->lengthInSamples));
+        if(!reader->read(&clip->audio,0,clip->audio.getNumSamples(),0,true,true))return juce::Result::fail("Cannot decode separated stem");
+        for(int ch=0;ch<2;++ch)for(int s=0;s<clip->audio.getNumSamples();++s)if(!std::isfinite(clip->audio.getSample(ch,s)))return juce::Result::fail("Nonfinite separated stem");
+        loaded[static_cast<std::size_t>(i)]=std::move(clip);
+    }
+    const juce::ScopedLock lock(mutex);for(int i=0;i<4;++i)tracks[static_cast<std::size_t>(i)].clip=loaded[static_cast<std::size_t>(i)];
+    seconds=0;panic=true;++audioRevision;analysis={};return juce::Result::ok();
+}

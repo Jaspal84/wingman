@@ -1,4 +1,6 @@
 #include "PluginProcessor.h"
+#include "GUI/GeneratorPanel.h"
+#include "GUI/ModelPanel.h"
 #include <iostream>
 #include <stdexcept>
 static int checks = 0;
@@ -146,6 +148,7 @@ int main() {
         check(p.partNotes(1).size()!=drumCount,"step edit changes events");
         auto invalidNote=p.partNotes(2).front(); invalidNote.velocity=0;
         check(p.editPartNote(2,0,invalidNote,false).failed(),"reject invalid manual MIDI edit");
+        auto edited=p.partNotes(2).front(); edited.velocity=80; check(p.editPartNote(2,0,edited,false).wasOk()&&p.partNotes(2).front().velocity==80,"manual MIDI velocity edit updates actual events");
         p.selectPart(-1);
         WingmanProcessor hosted; hosted.prepareToPlay(48000,1024); hosted.setPreview(false); hosted.generateMidi();
         MockPlayhead mock; hosted.setPlayHead(&mock); hosted.setHostSync(true);
@@ -171,6 +174,28 @@ int main() {
         std::jthread controls([&]{for(int i=0;i<1000;++i)stress.setTrackMix(0,static_cast<float>(i%100)/100,false,false);});
         for(int blockIndex=0;blockIndex<100;++blockIndex){midi.clear();stress.processBlock(block,midi);check(std::isfinite(block.getSample(0,100))&&block.getMagnitude(0,512)<=1,"concurrent control edits produce bounded finite audio");}
         controls.join();
+        check(p.importStemSet({source,source,source,source}).wasOk(),"atomic import of synchronized WAV set (not inference)");
+        const auto beforeInvalidStems=p.trackSnapshot(0).clip;
+        check(p.importStemSet({source,harmonicSource,source,source}).failed(),"reject mismatched stem lengths");
+        check(p.trackSnapshot(0).clip==beforeInvalidStems,"invalid stem set does not partially replace tracks");
+        check(p.startModelJob("install",{},false).failed(),"plugin requires explicit model download consent");
+#ifdef WINGMAN_TEST_PYTHON
+        p.configureModel(WINGMAN_TEST_PYTHON,directory.getChildFile("no-model-installed").getFullPathName());
+        check(p.startModelJob("check").wasOk(),"embedded model worker subprocess starts");
+        for(int wait=0;wait<1000&&p.modelJobStatus().running;++wait)juce::Thread::sleep(5);
+        check(!p.modelJobStatus().running&&p.modelJobStatus().message.contains("No such file"),"missing model reported through subprocess status protocol");
+        p.cancelModelJob();
+#endif
+        bool uiGenerated=false;
+        wingman::GeneratorPanel generatorPanel(wingman::PatternSettings{},[&](const auto& config){uiGenerated=true;return p.generatePart(0,config);},[&](int first,int length){return p.varyPart(0,first,length);});
+        for(auto* child:generatorPanel.getChildren())if(auto* button=dynamic_cast<juce::TextButton*>(child))if(button->getButtonText()=="Generate / regenerate")button->onClick();
+        check(uiGenerated&&!p.partNotes(0).empty(),"generator parameter-panel button invokes actual engine");
+        check(generatorPanel.createComponentSnapshot(generatorPanel.getLocalBounds()).isValid(),"generator parameter panel renders");
+        wingman::ModelPanel modelPanel(p.modelConfig(),[&](const auto& runtime,const auto& models){p.configureModel(runtime,models);},
+            [&](const auto& action,const auto& input,bool consent){return p.startModelJob(action,input,consent);},[&]{p.cancelModelJob();},[&]{return p.modelJobStatus();});
+        check(modelPanel.createComponentSnapshot(modelPanel.getLocalBounds()).isValid(),"model manager renders");
+        p.setSessionName("Portable test session"); juce::MemoryBlock namedState;p.getStateInformation(namedState);restored.setStateInformation(namedState.getData(),static_cast<int>(namedState.getSize()));
+        check(restored.sessionName()=="Portable test session","project name persists");
         // Optional reproducible visual fixture, never loaded by the application itself.
         if (std::getenv("WINGMAN_SCREENSHOT")) {
             for (int lane = 0; lane < 4; ++lane) {

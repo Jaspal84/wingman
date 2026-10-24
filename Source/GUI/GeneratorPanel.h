@@ -1,8 +1,10 @@
 #pragma once
 #include "Generation/Patterns.h"
+#include "Theme.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 namespace wingman {
 class GeneratorPanel final : public juce::Component {
+    Theme theme;
     PatternSettings settings;
     juce::PropertyPanel properties;
     juce::Slider phrase;
@@ -15,6 +17,7 @@ class GeneratorPanel final : public juce::Component {
 public:
     GeneratorPanel(PatternSettings initial,std::function<juce::Result(const PatternSettings&)> action,std::function<juce::Result(int,int)> varyAction)
         : settings(initial),callback(std::move(action)),variation(std::move(varyAction)) {
+        setLookAndFeel(&theme);
         addAndMakeVisible(phrase); addAndMakeVisible(vary);
         phrase.setRange(1,initial.bars,1); phrase.setValue(1); phrase.setTooltip("First bar of the phrase to vary (1-based)");
         vary.onClick=[this]{const int first=static_cast<int>(phrase.getValue())-1; auto result=variation(first,std::min(4,settings.bars-first)); status.setText(result.wasOk()?"Phrase varied; other bars retained":result.getErrorMessage(),juce::dontSendNotification);};
@@ -53,6 +56,7 @@ public:
         };
         setSize(560,640);
     }
+    ~GeneratorPanel() override {setLookAndFeel(nullptr);}
     void resized() override { properties.setBounds(getLocalBounds().reduced(12).withTrimmedBottom(118)); phrase.setBounds(16,getHeight()-110,200,30); vary.setBounds(224,getHeight()-110,getWidth()-240,30); apply.setBounds(16,getHeight()-72,getWidth()-32,32); status.setBounds(16,getHeight()-38,getWidth()-32,30); }
 };
 }

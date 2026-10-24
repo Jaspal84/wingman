@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
+#include "AI/ModelManager/ModelTypes.h"
+namespace wingman { class ModelJob; }
 #include "Audio/PreviewSynth.h"
 #include "Host/Transport.h"
 #include "MIDI/ChordSequence.h"
@@ -39,6 +41,12 @@ public:
     void setStateInformation(const void*, int) override;
 
     juce::Result importWav(int track, const juce::File&);
+    juce::Result importStemSet(const std::array<juce::File,4>&);
+    void configureModel(const juce::String&,const juce::String&);
+    std::pair<juce::String,juce::String> modelConfig() const;
+    juce::Result startModelJob(const juce::String&,const juce::File& input={},bool consent=false);
+    void cancelModelJob();
+    wingman::ModelJobInfo modelJobStatus() const;
     juce::Result exportWav(const juce::File&, int track = -1);
     juce::Result exportMidi(const juce::File&);
     juce::Result setProgression(const juce::String&);
@@ -58,6 +66,8 @@ public:
     void setTrackMix(int, float, bool, bool);
     void setTrackPan(int, float);
     void setEditorSize(int, int);
+    juce::String sessionName() const;
+    void setSessionName(const juce::String&);
     std::pair<int,int> editorSize() const;
     juce::Result beginRecording(int);
     juce::Result finishRecording();
@@ -86,6 +96,7 @@ private:
     int transpose = 0, editorWidth = 1200, editorHeight = 760;
     bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;
     std::vector<wingman::Chord> chords;
+    juce::String projectTitle="Untitled session";
     juce::String chordText = "C Am F G";
     juce::MidiMessageSequence sequence;
     double sequenceLength = 16;
@@ -108,6 +119,9 @@ private:
     juce::String analysisStatus;
     wingman::HarmonicResult analysis;
     std::jthread analysisThread;
+    std::unique_ptr<wingman::ModelJob> modelJob;
+    juce::String inferencePython,inferenceModels;
+    std::atomic<std::uint64_t> audioRevision{0};
     void rebuildMidi();
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WingmanProcessor)
 };

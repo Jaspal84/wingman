@@ -17,10 +17,10 @@ private:
     juce::TextButton dragMidi{"Drag"};
     juce::Slider bpm, timelineZoom, timelineScroll, midiBar;
     juce::Label status;
-    juce::TextEditor chordInput;
+    juce::TextEditor chordInput, projectTitle;
     juce::TextButton apply{"Apply chords"}, generate{"Generate MIDI"}, exportMix{"Export WAV mix"}, exportMidi{"Export MIDI"};
     juce::ToggleButton sync{"DAW"};
-    juce::ToggleButton preview{"Audition chords"};
+    juce::ToggleButton preview{"Audition MIDI"};
     std::array<juce::TextButton,4> imports, solos, mutes, stemExports;
     std::array<juce::Slider,4> volumes, pans;
     juce::TextButton detect{"Detect chords/key"}, cancel{"Cancel analysis"};

@@ -1,11 +1,15 @@
 #include "PluginEditor.h"
 #include "GUI/GeneratorPanel.h"
+#include "GUI/ModelPanel.h"
 namespace {
 const std::array<juce::String,4> names{"Vocals", "Other", "Bass", "Drums"};
 const juce::StringArray keyNames{"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
 }
 WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), processor(p) {
     setLookAndFeel(&theme);
+    addAndMakeVisible(projectTitle);projectTitle.setText(processor.sessionName());projectTitle.setTooltip("Project/session name saved in plugin state");
+    projectTitle.setFont(juce::FontOptions(11.0f));projectTitle.setColour(juce::TextEditor::backgroundColourId,juce::Colours::transparentBlack);
+    projectTitle.onFocusLost=[this]{processor.setSessionName(projectTitle.getText());};projectTitle.onReturnKey=projectTitle.onFocusLost;
     const auto size = processor.editorSize();
     setResizable(true,false); setResizeLimits(960,608,1920,1216);
     setSize(size.first,size.second);
@@ -26,9 +30,15 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     detect.setTooltip("Analyse the selected input lane in a background worker; replaces the chord progression");
     detect.onClick = [this] { showResult(processor.startAnalysis(recordTarget.getSelectedId()-1),"Harmonic analysis started"); };
     cancel.onClick = [this] { processor.cancelAnalysis(); };
-    models.onClick = [] {
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,"Model Manager",
-            "HTDemucs 4-stem model: not configured.\nAI separation is unavailable until verified weights and the pinned Python worker are installed.\n\nNo model is downloaded automatically. See Models/README.md for installation, license and checksums.","Close");
+    models.onClick = [this] {
+        auto safe=juce::Component::SafePointer<WingmanEditor>(this);
+        juce::DialogWindow::LaunchOptions options;options.dialogTitle="HTDemucs Model Manager";
+        options.content.setOwned(new wingman::ModelPanel(processor.modelConfig(),
+            [safe](const auto& python,const auto& models){if(safe)safe->processor.configureModel(python,models);},
+            [safe](const juce::String& action,const juce::File& input,bool consent){return safe?safe->processor.startModelJob(action,input,consent):juce::Result::fail("Editor closed");},
+            [safe]{if(safe)safe->processor.cancelModelJob();},
+            [safe]{return safe?safe->processor.modelJobStatus():wingman::ModelJobInfo{false,0,"Editor closed"};}));
+        options.dialogBackgroundColour=wingman::background;options.useNativeTitleBar=true;options.resizable=true;options.launchAsync();
     };
     for (auto* component : std::initializer_list<juce::Component*>{&record,&playButton,&stopButton,&keyBox,&recordTarget,&bpm,&status,&chordInput,&apply,&generate,&exportMix,&exportMidi,&preview,&ideas}) addAndMakeVisible(component);
     addAndMakeVisible(timelineZoom); addAndMakeVisible(timelineScroll);
@@ -147,6 +157,7 @@ void WingmanEditor::chooseExport(bool midi, int track) {
         });
 }
 void WingmanEditor::refresh() {
+    cancel.setEnabled(processor.analysisIsRunning());
     partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
     midiBar.setEnabled(processor.selectedPart()==1);
     sync.setToggleState(processor.hostSync(),juce::dontSendNotification);
@@ -209,6 +220,7 @@ void WingmanEditor::rebuildWaveform(int i) {
 void WingmanEditor::resized() {
     uiScale = std::min(getWidth()/1200.0f,getHeight()/760.0f);
     processor.setEditorSize(getWidth(),getHeight());
+    projectTitle.setBounds(28,55,174,18);
     models.setBounds(942,24,222,34); sync.setBounds(870,24,68,34);
     record.setBounds(206,24,142,34); recordTarget.setBounds(354,24,118,34);
     keyBox.setBounds(493,27,72,30); bpm.setBounds(581,27,120,30);
@@ -237,6 +249,10 @@ void WingmanEditor::paint(juce::Graphics& g) {
     g.setColour(wingman::panel); g.fillRoundedRectangle(12,12,1176,65,12);
     g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(21.0f,juce::Font::bold)); g.drawText("WINGMAN PRO",28,26,174,29,juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(11.0f)); g.setColour(juce::Colours::lightgrey);
+    const bool processing=processor.analysisIsRunning()||processor.modelJobStatus().running;
+    g.setColour(processing?wingman::accent:juce::Colours::grey);g.fillEllipse(1040,64,5,5);
+    g.drawText(processing?"Processing":"Idle",1050,59,110,16,juce::Justification::centredLeft);
+    g.setColour(juce::Colours::lightgrey);
     g.drawText("KEY",493,11,72,15,juce::Justification::centredLeft); g.drawText("BPM",581,11,70,15,juce::Justification::centredLeft);
 
     g.setColour(wingman::panel); g.fillRoundedRectangle(12,92,1176,399,14); g.fillRoundedRectangle(12,493,1176,216,14);
@@ -314,11 +330,15 @@ void WingmanEditor::paint(juce::Graphics& g) {
                 g.setColour(enabled ? wingman::trackColours[3] : juce::Colour{0xff303c43});
                 g.fillRect(midiBounds.getX()+step*midiBounds.getWidth()/16+1,midiBounds.getY()+row*midiBounds.getHeight()/9+1,midiBounds.getWidth()/16-2,midiBounds.getHeight()/9-2);
             }
-        } else for (const auto& note : notes) {
-            const float x = midiBounds.getX()+static_cast<float>(note.beat/(settings.bars*4)*midiBounds.getWidth());
-            const float width = std::max(1.0f,static_cast<float>(note.duration/(settings.bars*4)*midiBounds.getWidth()));
-            const float y = midiBounds.getBottom()-4-static_cast<float>(note.note%36)/36*(midiBounds.getHeight()-8);
-            g.setColour(wingman::trackColours[static_cast<std::size_t>(processor.selectedPart()+1)]); g.fillRect(x,y,width,3.0f);
+        } else {
+            int lowest=127,highest=0;for(const auto& note:notes){lowest=std::min(lowest,note.note);highest=std::max(highest,note.note);}
+            const double zoom=timelineZoom.getValue(),scroll=timelineScroll.getValue()*(1-1/zoom);
+            for (const auto& note : notes) {
+                const float x=midiBounds.getX()+static_cast<float>((note.beat/(settings.bars*4)-scroll)*zoom*midiBounds.getWidth());
+                const float width=std::max(2.0f,static_cast<float>(note.duration/(settings.bars*4)*midiBounds.getWidth()*zoom));
+                const float y=midiBounds.getBottom()-5-static_cast<float>(note.note-lowest)/std::max(1,highest-lowest)*(midiBounds.getHeight()-10);
+                g.setColour(wingman::trackColours[static_cast<std::size_t>(processor.selectedPart()+1)]);g.fillRect(x,y,width,3.0f);
+            }
         }
         g.restoreState();
     }
@@ -330,6 +350,29 @@ void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
         const auto settings=processor.partSettings(1);
         const int bar=juce::jlimit(0,settings.bars-1,static_cast<int>(midiBar.getValue())-1);
         showResult(processor.toggleDrumStep(bar,static_cast<int>((point.y-midiBounds.getY())/midiBounds.getHeight()*9),static_cast<int>((point.x-midiBounds.getX())/midiBounds.getWidth()*16)),"Drum step changed"); repaint(); return;
+    }
+    if(midiBounds.toFloat().contains(point)&&processor.selectedPart()>=0) {
+        const int part=processor.selectedPart();const auto notes=processor.partNotes(part);const auto settings=processor.partSettings(part);
+        int lowest=127,highest=0;for(const auto& note:notes){lowest=std::min(lowest,note.note);highest=std::max(highest,note.note);}
+        const double zoom=timelineZoom.getValue(),scroll=timelineScroll.getValue()*(1-1/zoom);
+        int selected=-1;double best=1.0e9;
+        for(int i=0;i<static_cast<int>(notes.size());++i){const auto& note=notes[static_cast<std::size_t>(i)];
+            const double x=midiBounds.getX()+(note.beat/(settings.bars*4)-scroll)*zoom*midiBounds.getWidth();
+            const double y=midiBounds.getBottom()-5-static_cast<double>(note.note-lowest)/std::max(1,highest-lowest)*(midiBounds.getHeight()-10);
+            const double distance=std::abs(point.x-x)+std::abs(point.y-y)*2;
+            if(distance<best){best=distance;selected=i;}
+        }
+        if(selected<0)return;
+        const auto note=notes[static_cast<std::size_t>(selected)];
+        auto* dialog=new juce::AlertWindow("Edit MIDI note","Beat-domain timing; overlapping monophonic notes are rejected",juce::MessageBoxIconType::NoIcon);
+        dialog->addTextEditor("pitch",juce::String(note.note),"MIDI pitch (0-127)");
+        dialog->addTextEditor("beat",juce::String(note.beat,4),"Start beat");dialog->addTextEditor("duration",juce::String(note.duration,4),"Duration in beats");
+        dialog->addTextEditor("velocity",juce::String(note.velocity),"Velocity (1-127)");dialog->addButton("Apply",1);dialog->addButton("Delete",2);dialog->addButton("Cancel",0);
+        dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe=juce::Component::SafePointer<WingmanEditor>(this),dialog,note,part,selected](int result)mutable{
+            if(!safe||result==0)return;auto changed=note;changed.note=dialog->getTextEditorContents("pitch").getIntValue();changed.beat=dialog->getTextEditorContents("beat").getDoubleValue();
+            changed.duration=dialog->getTextEditorContents("duration").getDoubleValue();changed.velocity=dialog->getTextEditorContents("velocity").getIntValue();
+            safe->showResult(safe->processor.editPartNote(part,selected,changed,result==2),result==2?"Note deleted":"Note updated");safe->repaint();
+        }),true);return;
     }
     if (!chordBounds.toFloat().contains(point)) return;
     auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
