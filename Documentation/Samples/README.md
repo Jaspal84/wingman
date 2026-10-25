@@ -27,9 +27,9 @@ lengths within a round-robin group. Missing attack coverage fails the whole rend
 
 `sw_last` optionally selects recorded articulations from Guitar Studio Technique:
 24 strumming, 25 downstrokes, 26 upstrokes, 27 fingerpicking, 28 arpeggio,
-29 palm mute, 30 hybrid, 31 rhythmic accents. This is a render-time selection,
-not a claim that down/up directions are encoded in exported MIDI. Automatic mixed
-strum direction sample switching is not implemented. Pick, fret/finger noise and
+29 palm mute, 30 hybrid, 31 rhythmic accents. Generated guitar MIDI encodes string-specific articulation cues as CC20. Down/up
+recordings mapped to 25/26 are selected when available; otherwise the selected
+technique mapping is retained. This works in offline and live sampled playback. Pick, fret/finger noise and
 release sounds require actual recordings supplied as layered/release zones; no
 synthetic noise is labeled as a recorded articulation.
 
@@ -49,8 +49,8 @@ In Guitar Studio choose Load / Verify SFZ. A background worker decodes and valid
 all unique files before publishing an immutable library. Cancel preserves the last
 successful library. Sampled Guitar is displayed only after successful verification.
 Select Sampled, generate MIDI, then Preview or Render WAV. Preview renders off-thread
-and plays the Guitar lane with existing transport/mixer; it is not a live MIDI
-sample instrument. Export WAV uses the existing stereo 24-bit export at 44.1/48 kHz;
+and plays the Guitar lane with existing transport/mixer. Preview MIDI uses a fixed
+128-voice preloaded sample instrument when the sampled engine is selected. Export WAV uses the existing stereo 24-bit export at 44.1/48 kHz;
 Drag WAV and MIDI retain the existing host file drag implementation.
 
 All samples are preloaded (no streaming): maximum 256 MiB decoded assets, 2048 zones,
@@ -90,3 +90,5 @@ compare velocity/round-robin/string mapping, render and audition, drag exported 
 and WAV to compatible tracks, compare region starts/note lengths, save/reopen session,
 reload SFZ, remove a sample and confirm a useful error, cancel load/render, monitor
 M1 memory and audio dropouts. None of these native-host checks has run on Linux.
+
+Current playback/song-follow workflow and native Mac checks: [Mac M1 runbook](../PLAYBACK-SONG-GUITAR-M1.md).

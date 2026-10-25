@@ -70,7 +70,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     keyBox.setTooltip("Transpose the written chord progression by this many semitones from C");
     keyBox.onChange = [this] { processor.setKey(keyBox.getSelectedId()-1); };
     recordTarget.addItemList({"Vocals", "Other", "Bass", "Drums", "Guitar"},1); recordTarget.setSelectedId(1);
-    bpm.setRange(40,240,0.1); bpm.setSliderStyle(juce::Slider::IncDecButtons);
+    bpm.setRange(20,400,0.1); bpm.setSliderStyle(juce::Slider::IncDecButtons);
     bpm.setTextBoxStyle(juce::Slider::TextBoxLeft,false,65,28);
     bpm.onValueChange = [this] { processor.setTempo(bpm.getValue()); };
     record.setColour(juce::TextButton::buttonOnColourId,juce::Colour{0xffa43848});
@@ -174,7 +174,7 @@ void WingmanEditor::importTrack(int i) {
             if (!safe || fc.getResult() == juce::File{}) return;
             auto result = safe->processor.importWav(i,fc.getResult());
             safe->showResult(result,"Imported " + fc.getResult().getFileName());
-            if (result.wasOk()) safe->status.setText("Imported; background tempo analysis started",juce::dontSendNotification);
+            if (result.wasOk()) safe->status.setText("Audio loaded; tempo, key and chord analysis started",juce::dontSendNotification);
             safe->refresh();
         });
 }
@@ -294,7 +294,9 @@ void WingmanEditor::paint(juce::Graphics& g) {
     g.setFont(juce::FontOptions(11.0f)); g.setColour(juce::Colours::lightgrey);
     const bool processing=processor.analysisIsRunning()||processor.modelJobStatus().running||processor.guitarStatus().running||processor.tempoAnalysisStatus().running;
     g.setColour(processing?wingman::accent:juce::Colours::grey);g.fillEllipse(1040,64,5,5);
-    g.drawText(processing?"Processing":"Idle",1050,59,110,16,juce::Justification::centredLeft);
+    bool audioLoaded=false;for(const auto& clip:cachedClips)audioLoaded|=clip!=nullptr;
+    const auto activity=processing?"Analyzing / rendering":processor.hostSync()?(processor.hostPosition()?"DAW synchronized":"DAW timing unavailable"):processor.isPlaying()?"Playback running":audioLoaded?"Audio loaded":"No audio imported";
+    g.drawText(activity,1050,59,110,16,juce::Justification::centredLeft);
     g.setColour(juce::Colours::lightgrey);
     g.drawText("KEY",493,11,72,15,juce::Justification::centredLeft); g.drawText("BPM",581,11,70,15,juce::Justification::centredLeft);
 

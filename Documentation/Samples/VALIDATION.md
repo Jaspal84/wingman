@@ -1,4 +1,9 @@
-# Sampled guitar validation — 2026-10-25
+# Historical sampled guitar validation — 2026-10-25
+
+This records commit f1913c0. Live voices, directional articulation and playback
+changes supersede the unfinished-feature statements below; see the current
+[workflow and Mac checks](../PLAYBACK-SONG-GUITAR-M1.md) and
+[regression report](../SESSION-ENGINE-VALIDATION.md).
 
 Environment: Linux x86_64, JUCE 8.0.6, GCC 14.2, Debug plugin build.
 

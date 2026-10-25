@@ -1,0 +1,133 @@
+{
+  "platform": "Linux x86_64",
+  "build": "Debug, C++20, JUCE 8.0.6",
+  "ctest": {
+    "passed": 16,
+    "failed": 0,
+    "elapsed_seconds": 19.9
+  },
+  "portable_ctest": {
+    "passed": 14,
+    "failed": 0,
+    "elapsed_seconds": 14.42
+  },
+  "native_macos": "not_run",
+  "logic_mainstage": "not_run",
+  "physical_audio_devices": "not_run",
+  "m1_performance": "not_run",
+  "real_demucs_inference": "not_requested; worker unchanged",
+  "suites": [
+    {
+      "name": "stem_validation",
+      "seconds": 0.359278,
+      "passed": true
+    },
+    {
+      "name": "standalone_install",
+      "seconds": 0.131344,
+      "passed": true
+    },
+    {
+      "name": "standalone_migration",
+      "seconds": 0.105878,
+      "passed": true
+    },
+    {
+      "name": "au_metadata",
+      "seconds": 0.114257,
+      "passed": true
+    },
+    {
+      "name": "model_worker",
+      "seconds": 0.111146,
+      "passed": true
+    },
+    {
+      "name": "song_guitar",
+      "seconds": 0.0209477,
+      "passed": true,
+      "evidence": [
+        "41 timeline-aligned guitar checks passed"
+      ]
+    },
+    {
+      "name": "guitar",
+      "seconds": 0.136968,
+      "passed": true,
+      "evidence": [
+        "398 guitar generation/render checks passed"
+      ]
+    },
+    {
+      "name": "guitar_audio",
+      "seconds": 0.390296,
+      "passed": true,
+      "evidence": [
+        "773935 guitar generation/render checks passed"
+      ]
+    },
+    {
+      "name": "tempo",
+      "seconds": 0.0991488,
+      "passed": true,
+      "evidence": [
+        "27 tempo tests passed"
+      ]
+    },
+    {
+      "name": "advanced_chords",
+      "seconds": 0.0270914,
+      "passed": true
+    },
+    {
+      "name": "dsp",
+      "seconds": 0.0128332,
+      "passed": true,
+      "evidence": [
+        "15 DSP checks passed"
+      ]
+    },
+    {
+      "name": "harmony",
+      "seconds": 13.1392,
+      "passed": true,
+      "evidence": [
+        "Synthetic held-chord accuracy: 96/96",
+        "Synthetic cadence key accuracy: 24/24",
+        "108 harmony checks passed"
+      ]
+    },
+    {
+      "name": "generation",
+      "seconds": 0.109151,
+      "passed": true,
+      "evidence": [
+        "32708 music checks passed"
+      ]
+    },
+    {
+      "name": "transport",
+      "seconds": 0.00314484,
+      "passed": true,
+      "evidence": [
+        "13 transport checks passed"
+      ]
+    },
+    {
+      "name": "sampled_guitar",
+      "seconds": 0.0575381,
+      "passed": true,
+      "evidence": [
+        "536 sampled guitar checks passed"
+      ]
+    },
+    {
+      "name": "integration",
+      "seconds": 5.07459,
+      "passed": true,
+      "evidence": [
+        "1439 integration checks passed"
+      ]
+    }
+  ]
+}

@@ -117,5 +117,19 @@ worker and render its generated MIDI through recorded samples. It supports veloc
 layers, per-string channel zones, round-robin and release samples. No recordings are
 bundled. Basic Synthesis remains explicitly labeled. See
 [Sample library format, licensing, limits and Mac checks](Documentation/Samples/README.md).
-Preview plays the rendered Guitar lane; live MIDI sampling and streamed sample tails
-are not implemented. AU loading and Logic file dragging still require native testing.
+Preview Audio plays the rendered Guitar lane; Preview MIDI supports live preloaded
+sample voices. Streamed sample tails are not implemented. AU loading and Logic file dragging still require native testing.
+
+
+### Playback and imported-song guitar workflow
+
+Imported audio and generated MIDI now run from immutable playback snapshots without
+acquiring the session mutex in the audio callback. DAW sync supports PPQ, seconds
+or sample positions and preserves independent BPM. Imports queue tempo/key/chord
+analysis with explicit Apply controls; Guitar Studio can generate from the actual,
+editable detected chord timestamps, including gaps. The standalone has separate
+verified-bundle install and launch tools for macOS.
+
+See [Mac build/install/launch and host verification](Documentation/PLAYBACK-SONG-GUITAR-M1.md)
+and [portable regression evidence](Documentation/SESSION-ENGINE-VALIDATION.md).
+Native AU/Logic/MainStage and physical M1 tests must be run on the Mac.

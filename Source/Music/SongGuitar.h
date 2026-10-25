@@ -6,6 +6,7 @@ namespace wingman {
 inline std::vector<NoteEvent> guitarFromSong(const HarmonicResult& song,GuitarSettings& settings,double bpm,const std::function<bool()>& next={}){
     if(song.regions.empty()||!std::isfinite(bpm)||bpm<40||bpm>240)throw std::invalid_argument("Analyze imported audio before generating a song arrangement");
     for(const auto& r:song.regions)if(!std::isfinite(r.start)||!std::isfinite(r.end)||r.start<0||r.end>120||r.end<=r.start)throw std::invalid_argument("Invalid song region duration");
+    auto checked=settings;checked.bars=1;validateGuitarSettings(checked);
     const double bar=settings.numerator*4.0/settings.denominator;
     const double total=song.regions.back().end*bpm/60;
     settings.bars=static_cast<int>(std::ceil(total/bar));validateGuitarSettings(settings);

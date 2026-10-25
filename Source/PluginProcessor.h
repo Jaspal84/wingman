@@ -36,7 +36,7 @@ public:
     const juce::String getName() const override { return "JASWINGMAN PRO"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
-    double getTailLengthSeconds() const override { return 0.02; }
+    double getTailLengthSeconds() const override { return 10.0; }
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
     void setCurrentProgram(int) override {}
@@ -111,6 +111,7 @@ public:
     int tempoSourceTrack() const;
     juce::Result applyDetectedTempo();
     juce::Result startAnalysis(int);
+    int harmonicSourceTrack()const;
     juce::Result applyDetectedKey();
     juce::Result applyDetectedChords();
     juce::Result correctDetectedChord(int,const juce::String&);
@@ -129,12 +130,12 @@ private:
     std::atomic<double> independentBpm{120},clockTempo{120};
     std::optional<wingman::HostFrame> readHostTiming() const;
     wingman::PlaybackEngine trackPlayback;
-    void publishPlayback(){trackPlayback.publish(tracks,internalLoop,guitarLibrary,sampledGuitar&&previewEnabled,guitarVelocityCurve,24+static_cast<int>(guitarSettings.technique),libraryRevision);}
+    void publishPlayback(){trackPlayback.publish(tracks,internalLoop,guitarLibrary,sampledGuitar&&previewEnabled&&(activePart<0||activePart==3),guitarVelocityCurve,24+static_cast<int>(guitarSettings.technique),libraryRevision,generated,sequence,sequenceLength,bpm,midiRevision,previewEnabled&&(!sampledGuitar||(activePart>=0&&activePart!=3)));}
     bool internalLoop=false;
     double audioLength() const;
     int transpose = 0, editorWidth = 1200, editorHeight = 840;
     bool voiceLeading=false;
-    bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;
+    bool playing = false, recording = false, previewEnabled = true, generated = false;
     std::vector<wingman::Chord> chords;
     juce::String projectTitle="Untitled session";
     juce::String chordText = "C Am F G";
@@ -147,20 +148,14 @@ private:
     int recordSamples = 0, recordTrack = 0;
     std::atomic<bool> recordEnabled{false},recordActive{false};
     wingman::PreviewSynth synth;
-    wingman::HostClock hostClock;
-    bool syncEnabled=false, hostAvailable=false;
-    wingman::HostFrame observedHost;
-    std::atomic<bool> recoverMidi{false};
-    std::array<std::array<bool,128>,16> ownedNotes{};
-    void flushOwnedNotes(juce::MidiBuffer&,int);
-    void scheduleMidi(double,int,int,juce::MidiBuffer&);
-    void chaseMidi(double,int,juce::MidiBuffer&);
+    bool syncEnabled=false;
     std::atomic<bool> analysisBusy{false};
     std::atomic<double> analysisProgress{0};
     juce::String analysisStatus;
     wingman::HarmonicResult analysis;
     juce::CriticalSection harmonicControl;
-    int pendingHarmony=-1;
+    int pendingHarmony=-1,analyzedLane=-1;
+    std::shared_ptr<const wingman::Clip> analyzedClip;
     std::uint64_t analysisRevision=0;
     std::atomic<std::uint64_t> analysisGeneration{0};
     int harmonyBaseKey=0;
@@ -170,7 +165,7 @@ private:
     juce::String guitarLibraryPath;
     bool sampledGuitar=false;
     double guitarVelocityCurve=1;
-    std::uint64_t libraryRevision=0;
+    std::uint64_t libraryRevision=0,midiRevision=0;
     std::vector<wingman::NoteEvent> guitarNotes;
     wingman::BackgroundThread guitarWorker;
     std::atomic<bool> guitarBusy{false};
