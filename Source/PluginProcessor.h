@@ -119,6 +119,7 @@ private:
     juce::String analysisStatus;
     wingman::HarmonicResult analysis;
     wingman::BackgroundThread analysisThread;
+    wingman::BackgroundThread dragCleanupThread;
     std::unique_ptr<wingman::ModelJob> modelJob;
     juce::String inferencePython,inferenceModels;
     std::atomic<std::uint64_t> audioRevision{0};

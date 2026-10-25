@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 #include "AI/ModelManager/ModelJob.h"
 #include <limits>
+#include "Files/DragFileStore.h"
 namespace {
 constexpr double maxClipSeconds = 120.0;
 bool validTrack(int i) { return i >= 0 && i < 4; }
@@ -10,6 +11,7 @@ WingmanProcessor::WingmanProcessor()
     : AudioProcessor(BusesProperties().withInput("Input", juce::AudioChannelSet::stereo(), true)
                                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)) {
     modelJob=std::make_unique<wingman::ModelJob>();
+    dragCleanupThread.start([](wingman::CancellationToken){wingman::DragFileStore::cleanupExpired(wingman::DragFileStore::root(),juce::Time::getCurrentTime());});
     setProgression(chordText);
 }
 WingmanProcessor::~WingmanProcessor() { modelJob.reset(); cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }

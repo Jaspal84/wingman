@@ -1,5 +1,6 @@
 #pragma once
 #include "ModelTypes.h"
+#include "Files/DragFileStore.h"
 #include "WingmanWorkerData.h"
 #include "Threading/BackgroundThread.h"
 #include <atomic>
@@ -92,10 +93,11 @@ public:
                 if(action=="separate"&&onStems){auto imported=onStems(output);if(imported.failed())throw std::runtime_error(imported.getErrorMessage().toStdString());}
                 if(action=="separate") {
                     // Keep raw validated files beyond drag completion: hosts may import lazily.
-                    const auto retained=juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Wingman-DragFiles").getChildFile(juce::Uuid().toString());
-                    if(retained.getParentDirectory().createDirectory().failed() || !output.moveFileTo(retained))
+                    juce::File retained;
+                    const auto allocation=DragFileStore::createDirectory(retained);
+                    if(allocation.failed())throw std::runtime_error(allocation.getErrorMessage().toStdString());
+                    if(!retained.deleteRecursively() || !output.moveFileTo(retained))
                         throw std::runtime_error("Stems imported but cannot retain drag files; use Export WAV");
-                    std::filesystem::permissions(retained.getFullPathName().toStdString(),std::filesystem::perms::owner_all,std::filesystem::perm_options::replace);
                     {const juce::ScopedLock lock(statusMutex);info.outputDirectory=retained;}
                     const auto reports=models.getChildFile("reports");
                     if(reports.createDirectory().wasOk())reports.getChildFile("separation-"+juce::Uuid().toString()+".json").replaceWithText(juce::JSON::toString(result));

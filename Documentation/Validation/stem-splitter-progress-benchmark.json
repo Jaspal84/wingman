@@ -1,0 +1,44 @@
+{
+  "state": "done",
+  "progress": 1.0,
+  "seconds": 36.806910806990345,
+  "peak_rss_bytes": 1548562432,
+  "sample_rate": 44100,
+  "frames": 882000,
+  "sources": [
+    "drums",
+    "bass",
+    "other",
+    "vocals"
+  ],
+  "backend": "PyTorch CPU",
+  "inference_and_export_seconds": 34.415172220993554,
+  "inference_seconds": 34.29038201500953,
+  "stem_statistics": {
+    "drums": {
+      "rms": 0.08852811497859564,
+      "peak": 0.6418001651763916
+    },
+    "bass": {
+      "rms": 0.0002930071705484194,
+      "peak": 0.01046572346240282
+    },
+    "other": {
+      "rms": 0.1409461254663785,
+      "peak": 0.7842919230461121
+    },
+    "vocals": {
+      "rms": 0.00015238485199050756,
+      "peak": 0.004875430837273598
+    }
+  },
+  "model_sha256": "8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4",
+  "torch_version": "2.5.1+cpu",
+  "torchaudio_version": "2.5.1+cpu",
+  "demucs_version": "4.0.1",
+  "python_version": "3.12.14",
+  "cpu_threads": 2,
+  "segment_seconds": 4,
+  "overlap": 0.25,
+  "architecture": "x86_64"
+}

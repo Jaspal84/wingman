@@ -1,7 +1,8 @@
 # Stem Splitter and external MIDI dragging
 
-The main editor now has a Stem Splitter row. Select audio or drop one file on the
-editor, then press Separate. Successful separation replaces all four lanes.
+The main editor has a framed Stem Splitter row with Import Audio, Separate
+Stems, a graphical progress bar, status text and Cancel. Select audio or drop one
+file on the editor, then press Separate Stems. Successful separation replaces all four lanes.
 Configure the local Python runtime and model directory in Model Manager first;
 model installation remains a separate explicit-consent action. No automatic
 model download occurs when selecting, dropping, or separating audio.
@@ -35,7 +36,12 @@ released) and removed its file in the drag completion callback. The replacement
 starts from mouseDrag after a six-pixel held gesture. MIDI and stem files are
 retained in unique subdirectories of the OS temporary `Wingman-DragFiles` folder;
 there is deliberately no completion-callback deletion because hosts can read
-files later. The OS can eventually remove these files. Drag again to regenerate
+files later. A processor-start background pass removes UUID directories older
+than seven days, checks at most 4096 entries and removes at most 128 directories
+per pass. Recent exports, unrelated directory names and symlinks are skipped.
+Every drag refreshes its directory timestamp. Cleanup is opportunistic at
+plugin/application startup; recent exports are not evicted to enforce a hard disk
+quota. The OS can also remove temporary files. Drag again to regenerate
 MIDI, or re-separate/Export WAV if raw stems expire. Quit DAWs before manually
 removing this folder. Files are not intended as permanent project storage; save
 exports and ask the DAW to copy imported audio into its project.
@@ -125,7 +131,7 @@ splitter path may block the UI, and there is no proof of zero allocations in the
 host MIDI buffer. Native external dragging, AU lifecycle/sandbox behavior and M1
 performance require physical Mac verification before a release claim.
 
-## Executed Linux results for this update
+## Executed Linux results for the initial splitter update (805f2a2)
 
 - GCC 14 / JUCE 8.0.6: VST3, standalone and integration executable built.
 - Full CTest: **8/8 passed in 69.57 s**; integration **775 checks in 57.40 s**.
@@ -147,3 +153,35 @@ performance require physical Mac verification before a release claim.
   executed here. Automated reconstruction and finite-sample checks do not prove
   source isolation quality. The fixture has quiet vocal/bass estimates; use a
   vocal-rich licensed recording for manual quality assessment.
+
+## Follow-up: graphical progress, retention and responsive layout
+
+`Files/DragFileStore.h` now centralizes cache creation and background expiry for
+MIDI and WAV drag files. The parent cache has owner-only permissions. The worker
+uses this store for raw stems; the editor uses it for the selected MIDI pattern.
+`FileDragButton` refreshes retention when a gesture begins. No model installation
+or download is performed by these changes.
+
+Integration tests additionally exercise bounded cleanup, preservation of recent
+host-import files and unrelated directories, and all five drag buttons at
+960×660, 1200×760, 1920×1318 and 960×1216. They also assert that Import Audio,
+Separate Stems, graphical progress and Export MIDI are present. Existing exact
+SMF timing/note pairing tests and actual inference opt-in remain enabled.
+
+The old `(1090,680)` coordinates are design-space positions, transformed with all
+other controls using the editor size. Tests check transformed bounds rather than
+assuming those numbers are physical pixels. GUI behavior still requires Retina
+and native host verification on a Mac.
+
+Follow-up verification on Linux: VST3 and standalone rebuilt; **8/8 CTest suites
+passed in 70.86 seconds**, with **804 integration checks**. The 20-second real
+music fixture passed background AIFF conversion, genuine HTDemucs inference,
+aligned raw/exported WAV checks, and cancellation after an inference chunk
+(**100.207 ms** cancellation latency). Raw-output structural validation passed;
+mixture reconstruction SNR was **31.98 dB**. Quiet vocal/bass warnings remain,
+and this does not constitute perceptual source-isolation testing. Worker elapsed
+time was **36.8069 seconds**, peak RSS **1548562432 bytes**. Evidence is in
+`Validation/stem-splitter-progress-benchmark.json` and
+`Validation/stem-splitter-progress-quality.json`. Graphical splitter rendering
+was inspected. macOS AU builds/auval, real Logic/MainStage drag acceptance and
+Apple M1 performance remain unexecuted.

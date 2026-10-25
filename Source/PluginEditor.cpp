@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "GUI/GeneratorPanel.h"
 #include "GUI/ModelPanel.h"
+#include "Files/DragFileStore.h"
 namespace {
 const std::array<juce::String,4> names{"Vocals", "Other", "Bass", "Drums"};
 const juce::StringArray keyNames{"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
@@ -21,17 +22,18 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     partChoice.onChange = [this] { processor.selectPart(partChoice.getSelectedId()-2); repaint(); };
     dragMidi.setTooltip("Drag the selected MIDI part into a compatible DAW");
     dragMidi.prepare = [this](juce::File& file) {
-        const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Wingman-DragFiles").getChildFile(juce::Uuid().toString());
-        if(dir.createDirectory().failed())return juce::Result::fail("Cannot create MIDI drag directory; use Export MIDI");
+        juce::File dir;
+        const auto allocated=wingman::DragFileStore::createDirectory(dir);
+        if(allocated.failed())return allocated;
         file=dir.getChildFile(partChoice.getText().replaceCharacter(' ','-')+".mid");
         return processor.exportMidi(file);
     };
     dragMidi.report=[this](const auto& message){status.setText(message,juce::dontSendNotification);};
-    for(auto* c:std::initializer_list<juce::Component*>{&splitChoose,&splitStart,&splitCancel,&splitStatus})addAndMakeVisible(c);
+    for(auto* c:std::initializer_list<juce::Component*>{&splitChoose,&splitStart,&splitCancel,&splitStatus,&splitProgressBar})addAndMakeVisible(c);
     splitChoose.onClick=[this]{
         chooser=std::make_unique<juce::FileChooser>("Choose audio to split (up to 120 seconds)",juce::File{},"*.wav;*.aif;*.aiff;*.flac;*.mp3;*.m4a");
         chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe=juce::Component::SafePointer<WingmanEditor>(this)](const auto& fc){
-            if(safe&&fc.getResult()!=juce::File{}){safe->splitInput=fc.getResult();safe->splitChoose.setButtonText(safe->splitInput.getFileName());}
+            if(safe&&fc.getResult()!=juce::File{}){safe->splitInput=fc.getResult();safe->splitChoose.setTooltip(safe->splitInput.getFullPathName());safe->splitStatus.setText("Ready: "+safe->splitInput.getFileName()+" | Separate replaces four lanes",juce::dontSendNotification);}
         });
     };
     splitStart.onClick=[this]{startSplit(splitInput);};
@@ -202,6 +204,8 @@ void WingmanEditor::refresh() {
 }
 void WingmanEditor::timerCallback() {
     const auto job=processor.modelJobStatus();
+    splitProgress=juce::jlimit(0.0,1.0,job.progress);
+    splitProgressBar.setTextToDisplay(job.running?juce::String(splitProgress*100,0)+"%":"Stem Splitter");
     splitStart.setEnabled(!job.running && splitInput.existsAsFile()); splitChoose.setEnabled(!job.running);splitCancel.setEnabled(job.running);
     if(job.running || job.message!=splitLastMessage){
         splitLastMessage=job.message;
@@ -270,11 +274,11 @@ void WingmanEditor::resized() {
     timelineZoom.setBounds(768,548,112,18); timelineScroll.setBounds(768,574,112,18);
     status.setBounds(24,720,1152,28);
     // Reserve an independent splitter row without removing existing controls.
-    for(auto* child:getChildren())if(child->getY()>=90 && child!=&splitChoose && child!=&splitStart && child!=&splitCancel && child!=&splitStatus)
+    for(auto* child:getChildren())if(child->getY()>=90 && child!=&splitChoose && child!=&splitStart && child!=&splitCancel && child!=&splitStatus && child!=&splitProgressBar)
         child->setTopLeftPosition(child->getX(),child->getY()+64);
     for(auto& bounds:waveformBounds)bounds.translate(0,64);
     chordBounds.translate(0,64);midiBounds.translate(0,64);
-    splitChoose.setBounds(28,88,300,30);splitStart.setBounds(340,88,120,30);splitCancel.setBounds(472,88,100,30);splitStatus.setBounds(28,121,1136,24);
+    splitChoose.setBounds(28,88,260,30);splitStart.setBounds(300,88,150,30);splitCancel.setBounds(462,88,100,30);splitProgressBar.setBounds(584,88,580,30);splitStatus.setBounds(28,121,1136,24);
     for(int i=0;i<4;++i)rebuildWaveform(i);
     for (auto* child : getChildren()) child->setTransform(juce::AffineTransform::scale(uiScale));
 }
@@ -290,7 +294,7 @@ void WingmanEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colours::lightgrey);
     g.drawText("KEY",493,11,72,15,juce::Justification::centredLeft); g.drawText("BPM",581,11,70,15,juce::Justification::centredLeft);
 
-    g.setColour(wingman::panel); g.fillRoundedRectangle(12,156,1176,399,14); g.fillRoundedRectangle(12,557,1176,216,14);
+    g.setColour(wingman::panel); g.fillRoundedRectangle(12,80,1176,70,10); g.fillRoundedRectangle(12,156,1176,399,14); g.fillRoundedRectangle(12,557,1176,216,14);
     g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(15.0f,juce::Font::bold));
     g.drawText("INPUT TRACKS",28,165,210,23,juce::Justification::centredLeft);
     g.drawText("EXPORT STEMS",912,165,252,23,juce::Justification::centredLeft);
@@ -449,7 +453,7 @@ bool WingmanEditor::isInterestedInFileDrag(const juce::StringArray& files){
 void WingmanEditor::filesDropped(const juce::StringArray& files,int,int){
     if(!isInterestedInFileDrag(files))return;
     if(processor.modelJobStatus().running){splitStatus.setText("Wait for the current operation or Cancel",juce::dontSendNotification);return;}
-    splitInput=juce::File(files[0]);splitChoose.setButtonText(splitInput.getFileName());
+    splitInput=juce::File(files[0]);splitChoose.setTooltip(splitInput.getFullPathName());
     splitStatus.setText("Ready: "+splitInput.getFileName()+" | Separate replaces all four lanes",juce::dontSendNotification);
 }
 void WingmanEditor::startSplit(const juce::File& input){

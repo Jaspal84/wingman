@@ -1,6 +1,8 @@
 #include "PluginProcessor.h"
 #include "GUI/GeneratorPanel.h"
 #include "GUI/ModelPanel.h"
+#include "GUI/FileDragButton.h"
+#include "Files/DragFileStore.h"
 #include <iostream>
 #include <stdexcept>
 static int checks = 0;
@@ -15,6 +17,17 @@ int main() {
     const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("wingman-tests", "", false);
     directory.createDirectory();
     try {
+        const auto cache=directory.getChildFile("drag-cache-test");cache.createDirectory();
+        const auto now=juce::Time::getCurrentTime();
+        const auto expired=juce::Time(now.toMilliseconds()-wingman::DragFileStore::retentionMilliseconds-60000);
+        for(int i=0;i<3;++i){auto old=cache.getChildFile(juce::Uuid().toString());old.createDirectory();old.getChildFile("notes.mid").replaceWithText("retained host export");old.setLastModificationTime(expired);}
+        auto recent=cache.getChildFile(juce::Uuid().toString());recent.createDirectory();recent.getChildFile("notes.mid").replaceWithText("pending host import");
+        auto unrelated=cache.getChildFile("user-files");unrelated.createDirectory();unrelated.setLastModificationTime(expired);
+        check(wingman::DragFileStore::cleanupExpired(cache,now,2)==2,"drag cleanup caps removals per pass");
+        check(recent.getChildFile("notes.mid").existsAsFile(),"delayed host import file survives cleanup");
+        check(unrelated.isDirectory(),"cleanup preserves unrelated directories");
+        check(wingman::DragFileStore::cleanupExpired(cache,now)==1,"remaining expired exports removed on next pass");
+        check(wingman::DragFileStore::cleanupExpired(cache,now)==0,"recent exports retained across repeated cleanup");
         WingmanProcessor p; p.prepareToPlay(48000,512);
         juce::AudioBuffer<float> input(2,4800);
         for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 4800; ++i) input.setSample(ch,i,0.25f);
@@ -279,6 +292,23 @@ int main() {
         // Instantiate and lay out the real editor, then rasterise it to exercise GUI paint paths.
         std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
         check(editor->getWidth() == 1200 && editor->getHeight() == 760,"editor created and laid out");
+        for(const auto size:std::array<std::pair<int,int>,4>{{{960,660},{1200,760},{1920,1318},{960,1216}}}){
+            editor->setSize(size.first,size.second);
+            int dragControls=0;bool import=false,separate=false,progress=false,fallback=false;
+            for(auto* child:editor->getChildren()){
+                if(dynamic_cast<wingman::FileDragButton*>(child)){
+                    ++dragControls;check(child->isVisible() && editor->getLocalBounds().contains(editor->getLocalArea(child,child->getLocalBounds())),"MIDI/stem drag controls visible at every editor size");
+                }
+                if(auto* button=dynamic_cast<juce::TextButton*>(child)){
+                    import|=button->getButtonText()=="Import Audio";
+                    separate|=button->getButtonText()=="Separate Stems";
+                    fallback|=button->getButtonText()=="Export MIDI";
+                }
+                progress|=dynamic_cast<juce::ProgressBar*>(child)!=nullptr;
+            }
+            check(dragControls==5&&import&&separate&&progress&&fallback,"graphical splitter and MIDI fallback remain present");
+        }
+        editor->setSize(1200,760);
         auto image = editor->createComponentSnapshot(editor->getLocalBounds());
         check(image.isValid(),"editor paint renders");
         if (const auto* path = std::getenv("WINGMAN_SCREENSHOT")) { juce::PNGImageFormat png; juce::FileOutputStream out{juce::File{path}};

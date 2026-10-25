@@ -19,8 +19,10 @@ private:
     juce::ComboBox keyBox, recordTarget, ideas, partChoice;
     wingman::FileDragButton dragMidi;
     std::array<wingman::FileDragButton,4> stemDrags;
-    juce::TextButton splitChoose{"Choose audio / drop file"}, splitStart{"Separate"}, splitCancel{"Cancel"};
+    juce::TextButton splitChoose{"Import Audio"}, splitStart{"Separate Stems"}, splitCancel{"Cancel"};
     juce::Label splitStatus;
+    double splitProgress=0;
+    juce::ProgressBar splitProgressBar{splitProgress};
     juce::File splitInput;
     juce::String splitLastMessage;
     void startSplit(const juce::File&);
