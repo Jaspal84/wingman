@@ -11,7 +11,7 @@ GuitarAudio renderGuitar(const std::vector<NoteEvent>& notes,const GuitarSetting
     for(std::size_t n=0;n<notes.size();++n){
         if(next&&!next(n/static_cast<double>(notes.size())))throw std::runtime_error("Guitar render cancelled");
         const auto& note=notes[n];
-        if(note.channel<1||note.channel>6||note.note<40||note.note>88||note.velocity<1||note.velocity>127||!std::isfinite(note.beat)||!std::isfinite(note.duration)||note.beat<0||note.duration<=0||note.beat+note.duration>seconds*bpm/60+0.001)throw std::invalid_argument("Invalid guitar MIDI note");
+        if(note.channel<1||note.channel>6||note.note<0||note.note>127||note.velocity<1||note.velocity>127||!std::isfinite(note.beat)||!std::isfinite(note.duration)||note.beat<0||note.duration<=0||note.beat+note.duration>seconds*bpm/60+0.001)throw std::invalid_argument("Invalid guitar MIDI note");
         const double frequency=440*std::pow(2.0,(note.note-69)/12.0);
         const auto delay=static_cast<std::size_t>(std::max(2.0,std::round(rate/frequency)));
         std::vector<double> string(delay);for(auto& sample:string)sample=noise();
