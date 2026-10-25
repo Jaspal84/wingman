@@ -69,9 +69,10 @@ struct SampledGuitar {
             else{auto key=(*it)[2].str();auto value=juce::String((*it)[3].str()).trim().toStdString();if(section=="<global>")global[key]=value;else if(section=="<group>")group[key]=value;else if(active)region[key]=value;else throw std::runtime_error("SFZ opcode outside section");}
         }if(juce::String(source.substr(consumed)).trim().isNotEmpty())throw std::runtime_error("Malformed SFZ text");flush();result.uniqueSamples=cache.size();if(result.zones.empty())throw std::runtime_error("SFZ has no sample regions");if(progress&&!progress(1))throw std::runtime_error("Sample loading cancelled");return result;
     }
+    bool hasArticulation(int value)const{for(const auto& z:zones)if(z.articulation==value)return true;return false;}
     int articulationFor(const NoteEvent& note,int fallback,int velocity)const{
         if(note.articulation>0)for(const auto& z:zones)if(!z.onRelease&&z.articulation==note.articulation&&note.note>=z.low&&note.note<=z.high&&velocity>=z.loVel&&velocity<=z.hiVel&&note.channel>=z.loChan&&note.channel<=z.hiChan)return note.articulation;
-        return fallback;
+        return note.articulation>=32?note.articulation:fallback;
     }
     GuitarAudio render(const std::vector<NoteEvent>&,const GuitarSettings&,double bpm,double rate,double velocityCurve=1,const std::function<bool(double)>& next={})const;
 };

@@ -2,7 +2,7 @@
 #include <functional>
 namespace wingman {
 std::array<int,6> guitarVoicing(const Chord& chord,int transpose){return guitarVoicing(chord,transpose,GuitarSettings{});}
-std::array<int,6> guitarVoicing(const Chord& chord,int transpose,const GuitarSettings& settings,const std::array<int,6>* previous){
+std::array<int,6> guitarVoicing(const Chord& chord,int transpose,const GuitarSettings& settings,const std::array<int,6>* previous,const std::function<bool(int,int)>& available){
     validateGuitarSettings(settings);
     unsigned target=0;for(auto note:chord.notes(transpose))target|=1u<<(note%12);
     const int bass=((chord.bass>=0?chord.bass:chord.root)+transpose+120)%12;
@@ -22,6 +22,7 @@ std::array<int,6> guitarVoicing(const Chord& chord,int transpose,const GuitarSet
                 if(fret && (fret<position || fret>position+3))continue;
                 const int pc=(settings.tuning[static_cast<std::size_t>(string)]+settings.capo+fret)%12;
                 if(!(target&(1u<<pc)))continue;
+                if(available&&!available(string+1,settings.tuning[static_cast<std::size_t>(string)]+settings.capo+fret))continue;
                 candidate[static_cast<std::size_t>(string)]=fret;
                 visit(string+1,mask|(1u<<pc),count+1,count?first:pc,sum+fret);
             }
@@ -35,16 +36,16 @@ void validateGuitarSettings(const GuitarSettings& s){
        (s.numerator!=3&&s.numerator!=4&&s.numerator!=6)||(s.denominator!=4&&s.denominator!=8))throw std::invalid_argument("Invalid guitar length, variation or meter");
     int selected=0;for(int i=0;i<6;++i){selected+=(s.stringMask>>i)&1;if(s.tuning[static_cast<std::size_t>(i)]<28||s.tuning[static_cast<std::size_t>(i)]>76||(i&&s.tuning[static_cast<std::size_t>(i)]<=s.tuning[static_cast<std::size_t>(i-1)]))throw std::invalid_argument("Tuning must ascend within MIDI 28-76");}
     if(s.capo<0||s.capo>12||s.maxFret<s.capo||s.maxFret>24||s.stringMask<0||s.stringMask>63||selected<3||s.pickDirection<0||s.pickDirection>2||s.articulationOverride<0||s.articulationOverride>43||(s.articulationOverride>0&&s.articulationOverride<24))throw std::invalid_argument("Invalid capo, fret, strings, direction or articulation");
-    for(double value:{s.energy,s.density,s.swing,s.strumSpeed,s.palmMute})if(!std::isfinite(value)||value<0||value>1)throw std::invalid_argument("Guitar parameters must be 0-1");
+    for(double value:{s.energy,s.density,s.swing,s.strumSpeed,s.palmMute,s.pickNoise,s.fretNoise,s.resonance})if(!std::isfinite(value)||value<0||value>1)throw std::invalid_argument("Guitar parameters must be 0-1");
     if(static_cast<int>(s.technique)<0||static_cast<int>(s.technique)>7||static_cast<int>(s.style)<0||static_cast<int>(s.style)>7||static_cast<int>(s.type)<0||static_cast<int>(s.type)>4)throw std::invalid_argument("Invalid guitar selection");
 }
-std::vector<NoteEvent> generateGuitar(const std::vector<Chord>& harmony,int transpose,const GuitarSettings& s,const std::function<bool()>& next,const std::array<int,6>* previous){
+std::vector<NoteEvent> generateGuitar(const std::vector<Chord>& harmony,int transpose,const GuitarSettings& s,const std::function<bool()>& next,const std::array<int,6>* previous,const std::function<bool(int,int)>& available){
     if(harmony.empty())throw std::invalid_argument("A guitar chord progression is required");
     validateGuitarSettings(s);
     const double barBeats=s.numerator*4.0/s.denominator,total=s.bars*barBeats,cycle=progressionBeats(harmony);
     std::mt19937 random(s.seed+static_cast<unsigned>(s.variation)*2246822519u);
     auto unit=[&]{return random()/static_cast<double>(std::mt19937::max());};
-    std::vector<std::array<int,6>> shapes;for(const auto& chord:harmony){shapes.push_back(guitarVoicing(chord,transpose,s,previous));previous=&shapes.back();}
+    std::vector<std::array<int,6>> shapes;for(const auto& chord:harmony){shapes.push_back(guitarVoicing(chord,transpose,s,previous,available));previous=&shapes.back();}
     std::vector<NoteEvent> notes;
     const std::array<int,8> base{1,0,1,-1,0,-1,1,-1};
     for(int bar=0;bar<s.bars;++bar)for(int step=0;step<static_cast<int>(barBeats*2);++step){

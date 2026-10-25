@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "bundled_samples": [],
+  "production_recordings_available": false,
+  "default_without_verified_library": "Basic Synthesis Fallback",
+  "required_assets": ["licensed steel-string recordings", "licensed nylon-classical recordings"],
+  "other_instruments": ["12-string", "clean electric", "distorted electric"],
+  "distribution_policy": "Only original recordings, public-domain assets, or explicit redistribution licenses may be bundled. User libraries are not copied into the repository.",
+  "photographs": "User-provided visual references are not audio samples and are not bundled."
+}

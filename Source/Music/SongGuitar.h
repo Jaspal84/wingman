@@ -3,7 +3,7 @@
 #include "AI/ChordDetection/HarmonicAnalysis.h"
 namespace wingman {
 // Region starts and ends are absolute song seconds; gaps remain silent.
-inline std::vector<NoteEvent> guitarFromSong(const HarmonicResult& song,GuitarSettings& settings,double bpm,const std::function<bool()>& next={}){
+inline std::vector<NoteEvent> guitarFromSong(const HarmonicResult& song,GuitarSettings& settings,double bpm,const std::function<bool()>& next={},const std::function<bool(int,int)>& available={}){
     if(song.regions.empty()||!std::isfinite(bpm)||bpm<40||bpm>240)throw std::invalid_argument("Analyze imported audio before generating a song arrangement");
     for(const auto& r:song.regions)if(!std::isfinite(r.start)||!std::isfinite(r.end)||r.start<0||r.end>120||r.end<=r.start)throw std::invalid_argument("Invalid song region duration");
     auto checked=settings;checked.bars=1;validateGuitarSettings(checked);
@@ -17,8 +17,8 @@ inline std::vector<NoteEvent> guitarFromSong(const HarmonicResult& song,GuitarSe
         const double length=(region.end-region.start)*bpm/60,offset=region.start*bpm/60;
         auto local=settings;local.bars=std::max(1,static_cast<int>(std::ceil(length/bar)));local.seed+=static_cast<std::uint32_t>(index++*2654435761u);
         auto chord=region.chord;chord.beats=length;
-        for(auto note:generateGuitar({chord},0,local,next,hadPrevious?&previous:nullptr)){if(note.beat>=length)continue;note.duration=std::min(note.duration,length-note.beat);note.beat+=offset;if(note.duration>.001)result.push_back(note);}
-        previous=guitarVoicing(chord,0,local,hadPrevious?&previous:nullptr);hadPrevious=true;
+        for(auto note:generateGuitar({chord},0,local,next,hadPrevious?&previous:nullptr,available)){if(note.beat>=length)continue;note.duration=std::min(note.duration,length-note.beat);note.beat+=offset;if(note.duration>.001)result.push_back(note);}
+        previous=guitarVoicing(chord,0,local,hadPrevious?&previous:nullptr,available);hadPrevious=true;
     }
     if(result.empty())throw std::runtime_error("No sufficiently supported chord regions for guitar arrangement");
     return result;

@@ -14,7 +14,7 @@ GuitarAudio SampledGuitar::render(const std::vector<NoteEvent>& notes,const Guit
     float peak=0;
     for(int first=0;first<frames;first+=512){if(next&&!next(first/static_cast<double>(frames)))throw std::runtime_error("Sample render cancelled");int count=std::min(512,frames-first);block.setSize(2,count,false,false,true);block.clear();events.clear();
         while(event<sequence.getNumEvents()){const auto& message=sequence.getEventPointer(event)->message;auto at=static_cast<int>(std::llround(message.getTimeStamp()*60/bpm*rate));if(at>=first+count)break;events.addEvent(message,std::max(0,at-first));++event;}
-        voices.render(block,events,rate,24+static_cast<int>(settings.technique),curve);if(voices.unmapped)throw std::runtime_error("No attack sample mapping for generated note, velocity or string");
+        voices.render(block,events,rate,24+static_cast<int>(settings.technique),curve,settings.pickNoise,settings.fretNoise,settings.resonance);if(voices.unmapped)throw std::runtime_error("No attack sample mapping for generated note, velocity or string");
         for(int c=0;c<2;++c)for(int i=0;i<count;++i){float value=block.getSample(c,i);if(!std::isfinite(value))throw std::runtime_error("Sample render overflow");output.channels[static_cast<std::size_t>(c)][static_cast<std::size_t>(first+i)]=value;peak=std::max(peak,std::abs(value));}
     }
     if(peak<1e-9f)throw std::runtime_error("Sample library rendered silence");if(peak>.95f)for(auto& channel:output.channels)for(float& value:channel)value*=.95f/peak;if(next&&!next(1))throw std::runtime_error("Sample render cancelled");return output;

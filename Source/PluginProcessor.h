@@ -99,7 +99,12 @@ public:
     wingman::GuitarSettings guitarConfig() const;
     wingman::ModelJobInfo guitarStatus() const;
     void cancelGuitar();
-    juce::Result loadGuitarLibrary(const juce::File&);
+    juce::Result loadGuitarLibrary(const juce::File&,int instrument=-1);
+    void selectGuitarInstrument(wingman::GuitarType);
+    juce::String guitarLibraryReport() const;
+    bool guitarHasArticulation(int) const;
+    juce::Result unloadGuitarLibrary();
+    void setGuitarLayers(double pick,double fret,double resonance);
     void useSampledGuitar(bool enabled,double curve=1);
     juce::String guitarEngineLabel() const;
     juce::File guitarSampleFile() const;
@@ -130,7 +135,7 @@ private:
     std::atomic<double> independentBpm{120},clockTempo{120};
     std::optional<wingman::HostFrame> readHostTiming() const;
     wingman::PlaybackEngine trackPlayback;
-    void publishPlayback(){trackPlayback.publish(tracks,internalLoop,guitarLibrary,sampledGuitar&&previewEnabled&&(activePart<0||activePart==3),guitarVelocityCurve,24+static_cast<int>(guitarSettings.technique),libraryRevision,generated,sequence,sequenceLength,bpm,midiRevision,previewEnabled&&(!sampledGuitar||(activePart>=0&&activePart!=3)));}
+    void publishPlayback(){trackPlayback.publish(tracks,internalLoop,guitarLibrary,sampledGuitar&&previewEnabled&&(activePart<0||activePart==3),guitarVelocityCurve,24+static_cast<int>(guitarSettings.technique),libraryRevision,generated,sequence,sequenceLength,bpm,midiRevision,previewEnabled&&(!sampledGuitar||(activePart>=0&&activePart!=3)),guitarSettings.pickNoise,guitarSettings.fretNoise,guitarSettings.resonance);}
     bool internalLoop=false;
     double audioLength() const;
     int transpose = 0, editorWidth = 1200, editorHeight = 840;
@@ -162,6 +167,8 @@ private:
     int effectiveKey()const{return (transpose-harmonyBaseKey+12)%12;}
     wingman::GuitarSettings guitarSettings;
     std::shared_ptr<const wingman::SampledGuitar> guitarLibrary;
+    std::array<std::shared_ptr<const wingman::SampledGuitar>,5> guitarBanks;
+    std::array<juce::String,5> guitarBankPaths;
     juce::String guitarLibraryPath;
     bool sampledGuitar=false;
     double guitarVelocityCurve=1;

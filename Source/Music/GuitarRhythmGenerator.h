@@ -16,12 +16,12 @@ struct GuitarSettings {
     std::array<int,6> tuning{40,45,50,55,59,64};
     int capo=0,maxFret=12,stringMask=63,pickDirection=0,articulationOverride=0;
     bool preferOpen=true;
-    double strumSpeed=.5,palmMute=.5;
+    double strumSpeed=.5,palmMute=.5,pickNoise=0,fretNoise=0,resonance=0;
 };
 inline constexpr std::array<int,6> guitarTuning{40,45,50,55,59,64};
 // -1 means muted string. Open strings or frets within a four-fret hand span.
 std::array<int,6> guitarVoicing(const Chord&,int transpose=0);
-std::array<int,6> guitarVoicing(const Chord&,int,const GuitarSettings&,const std::array<int,6>* previous=nullptr);
+std::array<int,6> guitarVoicing(const Chord&,int,const GuitarSettings&,const std::array<int,6>* previous=nullptr,const std::function<bool(int,int)>& available={});
 void validateGuitarSettings(const GuitarSettings&);
-std::vector<NoteEvent> generateGuitar(const std::vector<Chord>&,int transpose,const GuitarSettings&,const std::function<bool()>& next={},const std::array<int,6>* previous=nullptr);
+std::vector<NoteEvent> generateGuitar(const std::vector<Chord>&,int transpose,const GuitarSettings&,const std::function<bool()>& next={},const std::array<int,6>* previous=nullptr,const std::function<bool(int,int)>& available={});
 }
