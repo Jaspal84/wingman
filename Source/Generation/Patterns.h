@@ -11,6 +11,7 @@ enum class Style { PunjabiPop, Bhangra, Bollywood, HipHop, Trap, House, Funk, Ac
 struct NoteEvent {
     double beat = 0, duration = 0.25;
     int note = 60, velocity = 90, channel = 1;
+    int articulation = 0; // Guitar SFZ keyswitch metadata, emitted as CC20 when nonzero.
     bool operator==(const NoteEvent&) const = default;
 };
 struct PatternSettings {

@@ -73,7 +73,7 @@ std::vector<NoteEvent> generateGuitar(const std::vector<Chord>& harmony,int tran
             const bool accent=step==0||step==6;
             const int velocity=std::clamp(static_cast<int>(43+s.energy*55+(accent?12:0)+(s.technique==GuitarTechnique::Accents?(accent?14:-12):0)+(stroke<0?-15:0)+(string<2&&stroke>0?6:0)+(s.humanize?(unit()-0.5)*10:0)),1,127);
             const double length=s.technique==GuitarTechnique::PalmMute?0.15:s.technique==GuitarTechnique::Accents?0.45:0.78;
-            notes.push_back({beat,std::min(length,total-beat),guitarTuning[static_cast<std::size_t>(string)]+frets[static_cast<std::size_t>(string)],velocity,string+1});
+            notes.push_back({beat,std::min(length,total-beat),guitarTuning[static_cast<std::size_t>(string)]+frets[static_cast<std::size_t>(string)],velocity,string+1,s.technique==GuitarTechnique::PalmMute?29:s.technique==GuitarTechnique::Accents?31:picked?24+static_cast<int>(s.technique):stroke>0?25:26});
         }
     }
     std::stable_sort(notes.begin(),notes.end(),[](const auto& a,const auto& b){return a.beat<b.beat;});

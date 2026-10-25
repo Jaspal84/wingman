@@ -129,7 +129,7 @@ private:
     std::atomic<double> independentBpm{120},clockTempo{120};
     std::optional<wingman::HostFrame> readHostTiming() const;
     wingman::PlaybackEngine trackPlayback;
-    void publishPlayback(){trackPlayback.publish(tracks,internalLoop);}
+    void publishPlayback(){trackPlayback.publish(tracks,internalLoop,guitarLibrary,sampledGuitar&&previewEnabled,guitarVelocityCurve,24+static_cast<int>(guitarSettings.technique),libraryRevision);}
     bool internalLoop=false;
     double audioLength() const;
     int transpose = 0, editorWidth = 1200, editorHeight = 840;
@@ -170,6 +170,7 @@ private:
     juce::String guitarLibraryPath;
     bool sampledGuitar=false;
     double guitarVelocityCurve=1;
+    std::uint64_t libraryRevision=0;
     std::vector<wingman::NoteEvent> guitarNotes;
     wingman::BackgroundThread guitarWorker;
     std::atomic<bool> guitarBusy{false};

@@ -68,6 +68,10 @@ struct SampledGuitar {
             else{auto key=(*it)[2].str();auto value=juce::String((*it)[3].str()).trim().toStdString();if(section=="<global>")global[key]=value;else if(section=="<group>")group[key]=value;else if(active)region[key]=value;else throw std::runtime_error("SFZ opcode outside section");}
         }if(juce::String(source.substr(consumed)).trim().isNotEmpty())throw std::runtime_error("Malformed SFZ text");flush();if(result.zones.empty())throw std::runtime_error("SFZ has no sample regions");if(progress&&!progress(1))throw std::runtime_error("Sample loading cancelled");return result;
     }
+    int articulationFor(const NoteEvent& note,int fallback,int velocity)const{
+        if(note.articulation>0)for(const auto& z:zones)if(!z.onRelease&&z.articulation==note.articulation&&note.note>=z.low&&note.note<=z.high&&velocity>=z.loVel&&velocity<=z.hiVel&&note.channel>=z.loChan&&note.channel<=z.hiChan)return note.articulation;
+        return fallback;
+    }
     GuitarAudio render(const std::vector<NoteEvent>& notes,const GuitarSettings& settings,double bpm,double rate,double velocityCurve=1,const std::function<bool(double)>& next={})const {
         validateGuitarSettings(settings);if((rate!=44100&&rate!=48000)||!std::isfinite(bpm)||bpm<40||bpm>240||notes.empty()||!std::isfinite(velocityCurve)||velocityCurve<.25||velocityCurve>4)throw std::runtime_error("Invalid sampled render settings");
         double tail=0;for(const auto& z:zones)tail=std::max(tail,z.release);
@@ -77,9 +81,9 @@ struct SampledGuitar {
         std::array<int,16> counters{};bool heard=false;
         for(std::size_t n=0;n<notes.size();++n){if(next&&!next(n/static_cast<double>(notes.size())))throw std::runtime_error("Sample render cancelled");const auto& note=notes[n];
             if(note.channel<1||note.channel>16||note.note<0||note.note>127||note.velocity<1||note.velocity>127||!std::isfinite(note.beat)||!std::isfinite(note.duration)||note.beat<0||note.duration<=0||note.beat+note.duration>duration*bpm/60+.001)throw std::runtime_error("Invalid sample MIDI note");
-            int velocity=std::clamp(static_cast<int>(std::round(127*std::pow(note.velocity/127.0,velocityCurve))),1,127);int round=counters[static_cast<std::size_t>(note.channel-1)]++;bool mapped=false;
-            for(const auto& z:zones){if((z.articulation>=0&&z.articulation!=24+static_cast<int>(settings.technique))||note.note<z.low||note.note>z.high||velocity<z.loVel||velocity>z.hiVel||note.channel<z.loChan||note.channel>z.hiChan||round%z.seqLength+1!=z.seqPosition)continue;
-                mapped|=!z.onRelease;double start=(note.beat+(z.onRelease?note.duration:0))*60/bpm*rate;double hold=note.duration*60/bpm;double step=z.rate/rate*std::pow(2.0,(note.note-z.root+z.tune/100)/12.0);
+            int velocity=std::clamp(static_cast<int>(std::round(127*std::pow(note.velocity/127.0,velocityCurve))),1,127);int round=counters[static_cast<std::size_t>(note.channel-1)]++;const int articulation=articulationFor(note,24+static_cast<int>(settings.technique),velocity);bool mapped=false;
+            for(const auto& z:zones){if((z.articulation>=0&&z.articulation!=articulation)||note.note<z.low||note.note>z.high||velocity<z.loVel||velocity>z.hiVel||note.channel<z.loChan||note.channel>z.hiChan||round%z.seqLength+1!=z.seqPosition)continue;
+                mapped|=!z.onRelease;double start=std::round((note.beat+(z.onRelease?note.duration:0))*60/bpm*rate);double hold=note.duration*60/bpm;double step=z.rate/rate*std::pow(2.0,(note.note-z.root+z.tune/100)/12.0);
                 for(std::size_t i=0;static_cast<std::size_t>(start)+i<output.channels[0].size();++i){if(i%8192==0&&next&&!next(n/static_cast<double>(notes.size())))throw std::runtime_error("Sample render cancelled");double pos=i*step;if(pos>=z.audio->getNumSamples()-1)break;double t=i/rate;double envelope=std::min(1.0,t/.002);if(z.onRelease){if(t>z.release)break;envelope*=std::max(0.0,1-t/z.release);}else if(t>hold){if(t>hold+z.release)break;envelope*=std::max(0.0,1-(t-hold)/z.release);}
                     for(int c=0;c<2;++c){int ch=std::min(c,z.audio->getNumChannels()-1),at=static_cast<int>(pos);double v=z.audio->getSample(ch,at)*(1-(pos-at))+z.audio->getSample(ch,at+1)*(pos-at);output.channels[static_cast<std::size_t>(c)][static_cast<std::size_t>(start)+i]+=static_cast<float>(v*envelope*z.volume*velocity/127.0);}
                 }

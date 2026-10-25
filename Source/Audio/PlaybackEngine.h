@@ -1,5 +1,6 @@
 #pragma once
 #include "Track.h"
+#include "SampleVoices.h"
 #include <atomic>
 #include <array>
 #include <optional>
@@ -9,17 +10,20 @@
 namespace wingman {
 // One audio reader, serialized non-audio writers. Reclamation occurs only on writers.
 class PlaybackEngine {
-    struct Snapshot {std::array<Track,5> tracks;bool loop=false;double length=0;};
+    struct Snapshot {std::array<Track,5> tracks;bool loop=false;double length=0;std::shared_ptr<const SampledGuitar> library;bool sampledPreview=false;double curve=1;int articulation=24;std::uint64_t libraryRevision=0;};
+    SampleVoices sampleVoices;
     std::atomic<const Snapshot*> current{nullptr},hazard{nullptr};
     std::vector<std::unique_ptr<Snapshot>> retained;
     std::atomic<double> requested{0},visible{0};
     double cursor=0,hostLoopStart=0,hostLoopEnd=0;
     bool hostMode=false;
 public:
+    std::atomic<int> unmappedSamples{0};
+    std::atomic<bool> resetSampleNotes{false};
     std::atomic<bool> playing{false};
     PlaybackEngine(){publish({},false);}
-    void publish(const std::array<Track,5>& tracks,bool loop){
-        auto next=std::make_unique<Snapshot>();next->tracks=tracks;next->loop=loop;
+    void publish(const std::array<Track,5>& tracks,bool loop,std::shared_ptr<const SampledGuitar> library={},bool sampledPreview=false,double curve=1,int articulation=24,std::uint64_t revision=0){
+        auto next=std::make_unique<Snapshot>();next->tracks=tracks;next->loop=loop;next->library=std::move(library);next->sampledPreview=sampledPreview;next->curve=curve;next->articulation=articulation;next->libraryRevision=revision;
         for(const auto& t:tracks)if(t.clip)next->length=std::max(next->length,t.clip->audio.getNumSamples()/t.clip->sampleRate);
         auto* pointer=next.get();retained.push_back(std::move(next));current.store(pointer);
         const auto* active=hazard.load();
@@ -36,9 +40,12 @@ public:
         if(hostPlaying)playing.store(*hostPlaying);
         visible.store(cursor);
     }
-    void render(juce::AudioBuffer<float>& output,double rate){
+    void render(juce::AudioBuffer<float>& output,double rate,const juce::MidiBuffer* midi=nullptr){
         const Snapshot* snapshot;
         do{snapshot=current.load();hazard.store(snapshot);}while(current.load()!=snapshot);
+        sampleVoices.bind(snapshot->library.get(),snapshot->libraryRevision);
+        if(resetSampleNotes.exchange(false))sampleVoices.reset();
+        if(snapshot->sampledPreview&&midi)sampleVoices.render(output,*midi,rate,snapshot->articulation,snapshot->curve);else{sampleVoices.reset();sampleVoices.renderTail(output,rate);}unmappedSamples=sampleVoices.unmapped;
         if(playing.load()&&rate>0){bool solo=false;for(const auto& t:snapshot->tracks)solo|=t.solo;
             for(const auto& t:snapshot->tracks){if(!t.clip||t.mute||(solo&&!t.solo))continue;
                 for(int i=0;i<output.getNumSamples();++i){double at=cursor+i/rate;if(hostMode&&hostLoopEnd>hostLoopStart&&at>=hostLoopEnd)at=hostLoopStart+std::fmod(at-hostLoopStart,hostLoopEnd-hostLoopStart);else if(!hostMode&&snapshot->loop&&snapshot->length>0)at=std::fmod(at,snapshot->length);
