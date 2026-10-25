@@ -3,7 +3,7 @@
 #include <array>
 namespace wingman {
 inline const juce::Colour background{0xff10151a}, panel{0xff1c2329}, accent{0xff9b8aff};
-inline const std::array<juce::Colour, 4> trackColours{juce::Colour{0xffb09aff}, juce::Colour{0xff69c9ef}, juce::Colour{0xfff18d89}, juce::Colour{0xff66d8b3}};
+inline const std::array<juce::Colour, 5> trackColours{juce::Colour{0xffb09aff}, juce::Colour{0xff69c9ef}, juce::Colour{0xfff18d89}, juce::Colour{0xff66d8b3}, juce::Colour{0xffffad60}};
 class Theme : public juce::LookAndFeel_V4 {
 public:
     void drawButtonBackground(juce::Graphics& g, juce::Button& button,

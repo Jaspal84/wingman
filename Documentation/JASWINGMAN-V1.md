@@ -13,3 +13,9 @@ Stage 1 Linux: renamed VST3 and standalone built; 8/8 CTest suites passed (13.17
 Background WAV drag creation/readability is covered by integration tests. This
 run did not opt into real inference; prior model validation is separate.
 Physical macOS AU, Logic/MainStage behavior and M1 performance are untested here.
+
+Stage 2: five independent mixer/record/import/waveform/export/drag lanes, including
+Guitar. State version 2 stores five tracks; version-1 four-track states still
+load with an empty Guitar lane. The model importer intentionally remains exactly
+four stems and does not overwrite Guitar. Linux build and 8/8 CTest passed
+(13.38s), including five-track round trip and generated legacy-state loading.

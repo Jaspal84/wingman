@@ -84,6 +84,13 @@ int main() {
         check(restored.tempo() == 100 && restored.key() == 2 && restored.progression() == "C Am F G","restore musical settings");
         check(restored.midiIsGenerated() && !restored.preview(),"restore MIDI generation and preview");
         check(restored.trackSnapshot(0).clip && restored.trackSnapshot(0).gain == 0.5f,"embedded audio and mix restored");
+        check(p.importWav(4,source).wasOk(),"fifth guitar lane import");p.setTrackPan(4,0.25f);p.setTrackMix(4,0.6f,true,true);
+        juce::MemoryBlock five;p.getStateInformation(five);restored.setStateInformation(five.getData(),static_cast<int>(five.getSize()));
+        check(restored.trackSnapshot(4).clip&&restored.trackSnapshot(4).mute&&restored.trackSnapshot(4).solo&&std::abs(restored.trackSnapshot(4).pan-0.25f)<0.001,"five-track state restores guitar audio and mix");
+        auto legacy=juce::ValueTree::readFromData(five.getData(),five.getSize());legacy.setProperty("version",1,nullptr);legacy.removeChild(4,nullptr);
+        juce::MemoryOutputStream oldStream;legacy.writeToStream(oldStream);restored.setStateInformation(oldStream.getData(),static_cast<int>(oldStream.getDataSize()));
+        check(restored.trackSnapshot(0).clip&&!restored.trackSnapshot(4).clip,"legacy four-track session restores with empty guitar lane");p.setTrackMix(4,0.6f,true,false);
+
         restored.play(); midi.clear(); restored.processBlock(block,midi);
         check(std::abs(block.getSample(0,100)-0.125f)<0.00001f,"restored session plays audio without source file lookup");
         p.stop(); check(p.beginRecording(2).wasOk(),"record input start");
@@ -312,7 +319,7 @@ int main() {
                 }
                 progress|=dynamic_cast<juce::ProgressBar*>(child)!=nullptr;
             }
-            check(dragControls==5&&import&&separate&&progress&&fallback,"graphical splitter and MIDI fallback remain present");
+            check(dragControls==6&&import&&separate&&progress&&fallback,"graphical splitter and MIDI fallback remain present");
         }
         editor->setSize(1200,760);
         auto image = editor->createComponentSnapshot(editor->getLocalBounds());

@@ -5,7 +5,7 @@
 #include "Files/DragFileStore.h"
 namespace {
 constexpr double maxClipSeconds = 120.0;
-bool validTrack(int i) { return i >= 0 && i < 4; }
+bool validTrack(int i) { return i >= 0 && i < 5; }
 }
 WingmanProcessor::WingmanProcessor()
     : AudioProcessor(BusesProperties().withInput("Input", juce::AudioChannelSet::stereo(), true)
@@ -346,11 +346,11 @@ juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
     return temporary.overwriteTargetFileWithTemporary() ? juce::Result::ok() : juce::Result::fail("Cannot replace destination");
 }
 juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
-    std::array<wingman::Track,4> snapshot;
+    std::array<wingman::Track,5> snapshot;
     { const juce::ScopedLock lock(mutex); snapshot = tracks; }
     if (track >= 0) {
         if (!validTrack(track)) return juce::Result::fail("Invalid track");
-        for (int i = 0; i < 4; ++i) { auto& t = snapshot[static_cast<std::size_t>(i)]; t.solo = false; t.mute = i != track; }
+        for (int i = 0; i < 5; ++i) { auto& t = snapshot[static_cast<std::size_t>(i)]; t.solo = false; t.mute = i != track; }
     }
     double duration = 0; bool solo = false;
     for (const auto& t : snapshot) solo |= t.solo;
@@ -381,7 +381,7 @@ void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
     const juce::ScopedLock lock(mutex);
     state.setProperty("projectTitle",projectTitle,nullptr); state.setProperty("inferencePython",inferencePython,nullptr); state.setProperty("inferenceModels",inferenceModels,nullptr);
     state.setProperty("width",editorWidth,nullptr); state.setProperty("height",editorHeight,nullptr);
-    state.setProperty("hostSync",syncEnabled,nullptr); state.setProperty("version",1,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
+    state.setProperty("hostSync",syncEnabled,nullptr); state.setProperty("version",2,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
     state.setProperty("chords",chordText,nullptr); state.setProperty("generated",generated,nullptr); state.setProperty("preview",previewEnabled,nullptr);
     for (const auto& t : tracks) {
         juce::ValueTree node("Track");
@@ -411,9 +411,10 @@ void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
 }
 void WingmanProcessor::setStateInformation(const void* data, int size) {
     auto state = juce::ValueTree::readFromData(data,static_cast<std::size_t>(std::max(0,size)));
-    if (!state.hasType("Wingman") || static_cast<int>(state["version"]) != 1 || state.getNumChildren() != 4) return;
-    std::array<wingman::Track,4> restored;
-    for (int i = 0; i < 4; ++i) {
+    const int version=state["version"];
+    if(!state.hasType("Wingman") || !((version==1&&state.getNumChildren()==4)||(version==2&&state.getNumChildren()==5)))return;
+    std::array<wingman::Track,5> restored;
+    for (int i = 0; i < state.getNumChildren(); ++i) {
         auto node = state.getChild(i); auto& t = restored[static_cast<std::size_t>(i)];
         float gain = node["gain"]; if (!std::isfinite(gain)) return;
         const float pan = node.getProperty("pan",0.0); if (!std::isfinite(pan)) return;

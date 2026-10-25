@@ -94,7 +94,7 @@ public:
     wingman::HarmonicResult analysisSnapshot() const;
 private:
     mutable juce::CriticalSection mutex;
-    std::array<wingman::Track,4> tracks;
+    std::array<wingman::Track,5> tracks;
     wingman::AudioDragCache audioDragCache;
     double engineRate = 44100, bpm = 120, seconds = 0;
     int transpose = 0, editorWidth = 1200, editorHeight = 760;
