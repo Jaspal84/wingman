@@ -66,6 +66,13 @@ int main() {
         check(std::abs(block.getSample(1,100)-0.125f)<0.00001f,"unmute playback");
         p.stop(); midi.clear(); p.processBlock(block,midi); check(block.getMagnitude(0,512) == 0,"stop silences and resets");
         check(p.positionSeconds() == 0,"stop rewinds");
+        for(double playbackRate:{44100.,48000.}){WingmanProcessor player;player.prepareToPlay(playbackRate,512);player.setPreview(false);
+            for(int lane=0;lane<5;++lane)check(player.importWav(lane,source).wasOk(),"playback fixture imports all five lanes");
+            for(int lane=0;lane<5;++lane){for(int i=0;i<5;++i)player.setTrackMix(i,.2f,false,i==lane);player.stop();player.play();midi.clear();player.processBlock(block,midi);check(block.getMagnitude(0,512)>.04f,"each solo lane audibly reaches processBlock output at both rates");}
+            for(int lane=0;lane<5;++lane)player.setTrackMix(lane,.2f,false,false);player.stop();player.play();midi.clear();player.processBlock(block,midi);check(std::abs(block.getSample(0,100)-.25f)<.0001f,"simultaneous five-lane sum");check(player.positionSeconds()>0,"playback position advances");
+            player.seekSeconds(.099);player.setLooping(true);midi.clear();player.processBlock(block,midi);check(block.getMagnitude(0,512)>.24f&&player.positionSeconds()<.02,"audio wraps inside block at lane endpoint");
+            player.setLooping(false);player.seekSeconds(.1);player.play();check(player.positionSeconds()==0,"Play restarts from end instead of silently playing beyond audio");player.stop();midi.clear();player.processBlock(block,midi);check(block.getMagnitude(0,512)==0,"stopped five-track output silent");}
+
         check(p.setProgression("C Am F G").wasOk(),"edit chords");
         check(p.setProgression("C7 nonsense").failed(),"reject invalid progression");
         p.setKey(2); p.setTempo(100); p.generateMidi(); p.setPreview(false); p.play(); midi.clear(); p.processBlock(block,midi);

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
+#include "Audio/PlaybackEngine.h"
 #include "Analysis/TempoAnalysis.h"
 #include "Music/GuitarRhythmGenerator.h"
 #include "Music/SampledGuitar.h"
@@ -68,6 +69,9 @@ public:
     bool preview() const;
     void play();
     void stop();
+    void seekSeconds(double);
+    void setLooping(bool);
+    bool looping() const;
     bool isPlaying() const;
     double positionSeconds() const;
     wingman::Track trackSnapshot(int) const;
@@ -117,6 +121,10 @@ private:
     std::array<wingman::Track,5> tracks;
     wingman::AudioDragCache audioDragCache;
     double engineRate = 44100, bpm = 120, seconds = 0;
+    wingman::PlaybackEngine trackPlayback;
+    void publishPlayback(){trackPlayback.publish(tracks,internalLoop);}
+    bool internalLoop=false;
+    double audioLength() const;
     int transpose = 0, editorWidth = 1200, editorHeight = 840;
     bool voiceLeading=false;
     bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;

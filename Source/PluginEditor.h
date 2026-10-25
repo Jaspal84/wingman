@@ -15,6 +15,7 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
 private:
     WingmanProcessor& processor;
+    juce::ToggleButton audioLoop{"Loop"};
     wingman::Theme theme;
     juce::TextButton record{"Record audio"}, playButton{"Play"}, stopButton{"Stop"};
     juce::ComboBox keyBox, recordTarget, ideas, partChoice;

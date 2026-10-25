@@ -18,6 +18,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     const auto size = processor.editorSize();
     setResizable(true,false); setResizeLimits(960,660,1920,1318);
     setSize(size.first,size.second);
+    addAndMakeVisible(audioLoop);audioLoop.onClick=[this]{processor.setLooping(audioLoop.getToggleState());};audioLoop.setTooltip("Loop imported audio to the longest lane; waveform click seeks while DAW sync is off");
     addAndMakeVisible(sync); sync.setTooltip("Follow the DAW playhead; local Play/BPM controls are disabled while synchronized"); sync.onClick=[this]{processor.setHostSync(sync.getToggleState());};
     addAndMakeVisible(midiBar); midiBar.setRange(1,32,1); midiBar.setValue(1); midiBar.setTooltip("Drum step-sequencer bar (1-based)"); midiBar.onValueChange=[this]{repaint();};
     addAndMakeVisible(partChoice); addAndMakeVisible(dragMidi);
@@ -190,6 +191,7 @@ void WingmanEditor::chooseExport(bool midi, int track) {
 }
 void WingmanEditor::refresh() {
     if(!projectTitle.hasKeyboardFocus(true)&&projectTitle.getText()!=processor.sessionName())projectTitle.setText(processor.sessionName());
+    audioLoop.setToggleState(processor.looping(),juce::dontSendNotification);audioLoop.setEnabled(!processor.hostSync());
     cancel.setEnabled(processor.analysisIsRunning());
     partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
     midiBar.setEnabled(processor.selectedPart()==1);
@@ -264,6 +266,7 @@ void WingmanEditor::rebuildWaveform(int i) {
     }
 }
 void WingmanEditor::resized() {
+    audioLoop.setBounds(990,584,75,24);
     uiScale=std::min(getWidth()/1200.0f,getHeight()/840.0f);
     processor.setEditorSize(getWidth(),getHeight());
     projectTitle.setBounds(28,55,174,18);models.setBounds(942,24,222,34);sync.setBounds(870,24,68,34);
@@ -418,6 +421,7 @@ void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
             safe->showResult(safe->processor.editPartNote(part,selected,changed,result==2),result==2?"Note deleted":"Note updated");safe->repaint();
         }),true);return;
     }
+    for(const auto& lane:waveformBounds)if(lane.toFloat().contains(point)){double duration=1;for(const auto& clip:cachedClips)if(clip)duration=std::max(duration,clip->audio.getNumSamples()/clip->sampleRate);processor.seekSeconds((point.x-lane.getX())/lane.getWidth()*duration);return;}
     if (!chordBounds.toFloat().contains(point)) return;
     auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
     double total = 0; for (const auto& token : tokens) if (auto chord = wingman::parseChord(token.toStdString())) total += chord->beats;
