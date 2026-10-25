@@ -331,6 +331,20 @@ int main() {
         {juce::MidiFile file;auto stream=guitarMidi.createInputStream();check(stream&&file.readFrom(*stream)&&file.getTimeFormat()==960,"guitar MIDI file readable at 960 PPQ");auto seq=*file.getTrack(0);seq.updateMatchedPairs();int attacks=0;for(int e=0;e<seq.getNumEvents();++e){const auto* event=seq.getEventPointer(e);if(event->message.isNoteOn()){++attacks;check(event->noteOffObject!=nullptr&&event->message.getChannel()<=6,"guitar string channels and matched releases");}}check(attacks==static_cast<int>(guitarNotes.size()),"all guitar notes exported");}
         juce::MemoryBlock guitarState;p.getStateInformation(guitarState);restored.setStateInformation(guitarState.getData(),static_cast<int>(guitarState.getSize()));
         check(restored.selectedPart()==3&&restored.partNotes(3)==guitarNotes&&restored.trackSnapshot(4).clip&&restored.trackSnapshot(4).clip->audio.getNumSamples()==p.trackSnapshot(4).clip->audio.getNumSamples(),"guitar generated-note and rendered-audio state round trip");
+        const auto sfzFixture=directory.getChildFile("guitar-fixture.sfz");
+        check(sfzFixture.replaceWithText("<region> sample="+source.getFullPathName()+" lokey=40 hikey=88 pitch_keycenter=60 ampeg_release=0.1"),"write licensed-test-only synthetic sample mapping");
+        check(p.loadGuitarLibrary(sfzFixture).wasOk(),"start async SFZ loading");
+        for(int wait=0;wait<2000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);
+        check(p.guitarEngineLabel().startsWith("Sampled Guitar"),"sampled indicator only after verified asset load");
+        check(p.generateGuitarPart(guitar,true,48000).wasOk(),"render generated MIDI through loaded samples");
+        for(int wait=0;wait<2000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);
+        check(p.guitarStatus().progress==1&&p.trackSnapshot(4).clip->name=="Sampled guitar","sampled WAV publication");
+        check(p.exportWav(directory.getChildFile("sampled-guitar.wav"),4,48000).wasOk(),"export sampled stereo PCM24 WAV");
+        {juce::WavAudioFormat format;std::unique_ptr<juce::AudioFormatReader> r(format.createReaderFor(directory.getChildFile("sampled-guitar.wav").createInputStream().release(),true));check(r&&r->bitsPerSample==24&&r->numChannels==2&&r->sampleRate==48000,"sampled WAV readable, stereo, 24 bit at 48k");}
+        juce::MemoryBlock sampledState;p.getStateInformation(sampledState);restored.setStateInformation(sampledState.getData(),static_cast<int>(sampledState.getSize()));
+        check(restored.guitarEngineLabel().contains("Load and verify")&&restored.guitarSampleFile()==sfzFixture,"sample library state retained without decoding on host state callback");
+        p.useSampledGuitar(false);
+
         check(p.setProgression("Dm(add9) Bbmaj7 Fmaj9 C/E | Am9 G7(b9) Cadd9 Fmaj7").wasOk(),"advanced cinematic progression accepts extensions altered dominants and slash bass");
         p.setVoiceLeading(true);p.generateMidi();const auto extendedMidi=directory.getChildFile("cinematic.mid");check(p.exportMidi(extendedMidi).wasOk(),"advanced voice-led chord MIDI exports");
         {juce::MidiFile file;auto stream=extendedMidi.createInputStream();check(stream&&file.readFrom(*stream),"advanced chord SMF readable");auto seq=*file.getTrack(0);seq.updateMatchedPairs();int notes=0;for(int e=0;e<seq.getNumEvents();++e){auto* event=seq.getEventPointer(e);if(event->message.isNoteOn()){++notes;check(event->noteOffObject&&event->message.getNoteNumber()>=36&&event->message.getNoteNumber()<=88,"voice-led extended chord notes have valid releases and ranges");}}check(notes>32,"extended chords retain additional tones");}

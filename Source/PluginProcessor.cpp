@@ -398,6 +398,9 @@ void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
         }
         patterns.addChild(node,-1,nullptr);
     }
+    state.setProperty("guitarSamplePath",guitarLibraryPath,nullptr);
+    state.setProperty("guitarSampleEngine",sampledGuitar,nullptr);
+    state.setProperty("guitarVelocityCurve",guitarVelocityCurve,nullptr);
     state.setProperty("guitar",wingman::saveGuitar(guitarSettings,guitarNotes),nullptr);
     juce::MemoryOutputStream patternStream; patterns.writeToStream(patternStream);
     state.setProperty("patterns",juce::var(patternStream.getMemoryBlock()),nullptr); state.setProperty("activePart",activePart,nullptr);
@@ -455,6 +458,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
             activePart=juce::jlimit(-1,2,static_cast<int>(state.getProperty("activePart",-1)));
         } catch(...) { for(auto& part : parts)part.clear(); activePart=-1; }
     }
+    guitarLibraryPath=state.getProperty("guitarSamplePath","").toString();sampledGuitar=state.getProperty("guitarSampleEngine",false);guitarVelocityCurve=std::clamp(static_cast<double>(state.getProperty("guitarVelocityCurve",1.0)),.25,4.0);if(!std::isfinite(guitarVelocityCurve))guitarVelocityCurve=1;guitarLibrary.reset();
     try{wingman::loadGuitar(state["guitar"],guitarSettings,guitarNotes);if(static_cast<int>(state.getProperty("activePart",-1))==3&&!guitarNotes.empty())activePart=3;}catch(...){guitarSettings={};guitarNotes.clear();}
     voiceLeading=state.getProperty("voiceLeading",false);
     syncEnabled=state.getProperty("hostSync",false); hostClock.reset();
@@ -501,23 +505,38 @@ juce::Result WingmanProcessor::trackDragFile(int track,juce::File& file){
 wingman::GuitarSettings WingmanProcessor::guitarConfig()const{const juce::ScopedLock lock(mutex);return guitarSettings;}
 wingman::ModelJobInfo WingmanProcessor::guitarStatus()const{const juce::ScopedLock lock(mutex);return {guitarBusy.load(),guitarProgress.load(),guitarMessage,{}};}
 void WingmanProcessor::cancelGuitar(){guitarWorker.request_stop();}
+double WingmanProcessor::guitarSampleVelocity()const{const juce::ScopedLock lock(mutex);return guitarVelocityCurve;}
+juce::File WingmanProcessor::guitarSampleFile()const{const juce::ScopedLock lock(mutex);return !juce::File::isAbsolutePath(guitarLibraryPath)?juce::File{}:juce::File(guitarLibraryPath);}
+void WingmanProcessor::useSampledGuitar(bool enabled,double curve){const juce::ScopedLock lock(mutex);sampledGuitar=enabled;guitarVelocityCurve=std::isfinite(curve)?std::clamp(curve,.25,4.0):1;}
+juce::String WingmanProcessor::guitarEngineLabel()const{const juce::ScopedLock lock(mutex);return sampledGuitar?(guitarLibrary?"Sampled Guitar | verified SFZ":"Sampled selected | Load and verify SFZ first"):"Basic Synthesis";}
+juce::Result WingmanProcessor::loadGuitarLibrary(const juce::File& file){
+    if(guitarBusy.exchange(true))return juce::Result::fail("Wait for current guitar job");guitarProgress=0;
+    {const juce::ScopedLock lock(mutex);guitarMessage="Loading and verifying SFZ samples...";}
+    guitarWorker.start([this,file](wingman::CancellationToken token){try{
+        auto library=std::make_shared<wingman::SampledGuitar>(wingman::SampledGuitar::load(file,[&](double p){guitarProgress=p;return !token.stop_requested();}));
+        const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Sample loading cancelled");guitarLibrary=std::move(library);guitarLibraryPath=file.getFullPathName();sampledGuitar=true;guitarProgress=1;guitarMessage="SFZ verified | "+juce::String(static_cast<double>(guitarLibrary->bytes)/1048576,1)+" MiB | user must hold sample rights";
+    }catch(const std::exception& e){const juce::ScopedLock lock(mutex);guitarMessage=e.what();}guitarBusy=false;});return juce::Result::ok();
+}
 juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config,bool renderAudio,double sampleRate){
     if(guitarBusy.exchange(true))return juce::Result::fail("Guitar generation is already running");
     std::vector<wingman::Chord> harmony;int keyCopy;double tempoCopy;juce::String text;std::shared_ptr<const wingman::Clip> originalGuitar;
     {const juce::ScopedLock lock(mutex);tempoCopy=bpm;originalGuitar=tracks[4].clip;harmony=chords;keyCopy=transpose;text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
-    guitarWorker.start([this,config,harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy,originalGuitar](wingman::CancellationToken token){
+    std::shared_ptr<const wingman::SampledGuitar> library;bool sampled;double curve;{const juce::ScopedLock lock(mutex);library=guitarLibrary;sampled=sampledGuitar;curve=guitarVelocityCurve;}
+    guitarWorker.start([this,library,sampled,curve,config,harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy,originalGuitar](wingman::CancellationToken token){
         try{auto notes=wingman::generateGuitar(harmony,keyCopy,config,[&]{return !token.stop_requested();});
             std::shared_ptr<const wingman::Clip> rendered;
             if(renderAudio){
-                {const juce::ScopedLock lock(mutex);guitarMessage="Rendering basic plucked-string synthesis...";}
-                const auto audio=wingman::renderGuitar(notes,config,tempoCopy,sampleRate,[&](double p){guitarProgress=0.1+p*0.85;return !token.stop_requested();});
-                auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=sampleRate;clip->name="Basic synthesized guitar";clip->audio.setSize(2,static_cast<int>(audio.channels[0].size()));
+                {const juce::ScopedLock lock(mutex);guitarMessage=sampled?"Rendering sampled guitar...":"Rendering basic plucked-string synthesis...";}
+                if(sampled&&!library)throw std::runtime_error("Load and verify an SFZ library, or explicitly select Basic Synthesis");
+                auto progress=[&](double p){guitarProgress=0.1+p*0.85;return !token.stop_requested();};
+                const auto audio=sampled?library->render(notes,config,tempoCopy,sampleRate,curve,progress):wingman::renderGuitar(notes,config,tempoCopy,sampleRate,progress);
+                auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=sampleRate;clip->name=sampled?"Sampled guitar":"Basic synthesized guitar";clip->audio.setSize(2,static_cast<int>(audio.channels[0].size()));
                 for(int ch=0;ch<2;++ch)clip->audio.copyFrom(ch,0,audio.channels[static_cast<std::size_t>(ch)].data(),clip->audio.getNumSamples());clip->buildWaveform();rendered=clip;
             }
             if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");
             const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");if(text!=chordText||keyCopy!=transpose)throw std::runtime_error("Harmony changed; regenerate guitar");
             if(renderAudio){if(tracks[4].clip!=originalGuitar)throw std::runtime_error("Guitar lane changed; render again");if(bpm!=tempoCopy)throw std::runtime_error("Tempo changed; render guitar again");tracks[4].clip.swap(rendered);++audioRevision;startTempoAnalysis(4);}
-            guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage=renderAudio?"Guitar WAV rendered with basic synthesis (not sampled realism)":"Guitar MIDI generated; audio requires Render WAV";
+            guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage=renderAudio?(sampled?"Sampled guitar WAV rendered":"Guitar WAV rendered with basic synthesis (not sampled realism)"):"Guitar MIDI generated; audio requires Render WAV";
         }catch(const std::exception& ex){const juce::ScopedLock lock(mutex);guitarMessage=ex.what();}guitarBusy=false;
     });return juce::Result::ok();
 }

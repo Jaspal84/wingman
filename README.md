@@ -109,3 +109,13 @@ ctest --test-dir build -R '^integration$' -V
 This test completes separation/import/export and then starts another model run to cancel after real chunk processing. Normal tests report when this opt-in block is not requested. See the M1 runbook for clone/update, dependencies, native build, installation, actual-identifier AU validation and real-model commands.
 
 Main-interface Stem Splitter and held-gesture MIDI/stem dragging: see [usage and Logic verification checklist](Documentation/STEM-SPLITTER-AND-MIDI-DRAG.md). Native Logic dragging remains unverified until tested on macOS.
+
+### User-supplied sampled guitar (SFZ subset)
+
+Guitar Studio can now load/verify a user-licensed SFZ instrument on a background
+worker and render its generated MIDI through recorded samples. It supports velocity
+layers, per-string channel zones, round-robin and release samples. No recordings are
+bundled. Basic Synthesis remains explicitly labeled. See
+[Sample library format, licensing, limits and Mac checks](Documentation/Samples/README.md).
+Preview plays the rendered Guitar lane; live MIDI sampling and streamed sample tails
+are not implemented. AU loading and Logic file dragging still require native testing.

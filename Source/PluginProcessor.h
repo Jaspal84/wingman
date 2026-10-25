@@ -3,6 +3,7 @@
 #include "Audio/Track.h"
 #include "Analysis/TempoAnalysis.h"
 #include "Music/GuitarRhythmGenerator.h"
+#include "Music/SampledGuitar.h"
 #include "Audio/AudioDragCache.h"
 #include "AI/ModelManager/ModelTypes.h"
 namespace wingman { class ModelJob; }
@@ -94,6 +95,11 @@ public:
     wingman::GuitarSettings guitarConfig() const;
     wingman::ModelJobInfo guitarStatus() const;
     void cancelGuitar();
+    juce::Result loadGuitarLibrary(const juce::File&);
+    void useSampledGuitar(bool enabled,double curve=1);
+    juce::String guitarEngineLabel() const;
+    juce::File guitarSampleFile() const;
+    double guitarSampleVelocity() const;
     juce::Result startTempoAnalysis(int);
     void cancelTempoAnalysis();
     wingman::TempoResult tempoSnapshot() const;
@@ -138,6 +144,10 @@ private:
     juce::String analysisStatus;
     wingman::HarmonicResult analysis;
     wingman::GuitarSettings guitarSettings;
+    std::shared_ptr<const wingman::SampledGuitar> guitarLibrary;
+    juce::String guitarLibraryPath;
+    bool sampledGuitar=false;
+    double guitarVelocityCurve=1;
     std::vector<wingman::NoteEvent> guitarNotes;
     wingman::BackgroundThread guitarWorker;
     std::atomic<bool> guitarBusy{false};
