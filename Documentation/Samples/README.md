@@ -92,3 +92,8 @@ reload SFZ, remove a sample and confirm a useful error, cancel load/render, moni
 M1 memory and audio dropouts. None of these native-host checks has run on Linux.
 
 Current playback/song-follow workflow and native Mac checks: [Mac M1 runbook](../PLAYBACK-SONG-GUITAR-M1.md).
+
+The development instrument upgrade adds SFZ pan and ADSR, separate type slots,
+shared live/offline voices and named recorded-layer mappings. See the current
+[guitar instrument guide](../GUITAR-INSTRUMENT.md) for supported mappings, licenses,
+limits and verification. This does not add bundled production recordings.

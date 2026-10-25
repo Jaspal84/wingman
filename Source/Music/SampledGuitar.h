@@ -56,6 +56,7 @@ struct SampledGuitar {
                 auto data=std::make_shared<juce::AudioBuffer<float>>(static_cast<int>(reader->numChannels),static_cast<int>(reader->lengthInSamples));
                 if(!reader->read(data.get(),0,data->getNumSamples(),0,true,true))throw std::runtime_error("Sample decode failed");
                 for(int c=0;c<data->getNumChannels();++c)for(int i=0;i<data->getNumSamples();++i)if(!std::isfinite(data->getSample(c,i)))throw std::runtime_error("Nonfinite sample audio");
+                if(data->getMagnitude(0,data->getNumSamples())<1e-9f)throw std::runtime_error("Silent sample asset; cannot verify playable guitar audio");
                 result.bytes+=size;cache[name]={data,reader->sampleRate};
             }
             z.audio=cache[name].first;z.rate=cache[name].second;result.zones.push_back(z);
@@ -67,7 +68,7 @@ struct SampledGuitar {
             consumed=static_cast<std::size_t>(it->position()+it->length());
             if((*it)[1].matched){flush();section=(*it)[1];active=section=="<region>";region.clear();if(section=="<global>"){global.clear();group.clear();}else if(section=="<group>")group.clear();else if(!active)throw std::runtime_error("Unsupported SFZ section: "+section);}
             else{auto key=(*it)[2].str();auto value=juce::String((*it)[3].str()).trim().toStdString();if(section=="<global>")global[key]=value;else if(section=="<group>")group[key]=value;else if(active)region[key]=value;else throw std::runtime_error("SFZ opcode outside section");}
-        }if(juce::String(source.substr(consumed)).trim().isNotEmpty())throw std::runtime_error("Malformed SFZ text");flush();result.uniqueSamples=cache.size();if(result.zones.empty())throw std::runtime_error("SFZ has no sample regions");if(progress&&!progress(1))throw std::runtime_error("Sample loading cancelled");return result;
+        }if(juce::String(source.substr(consumed)).trim().isNotEmpty())throw std::runtime_error("Malformed SFZ text");flush();result.uniqueSamples=cache.size();if(result.zones.empty())throw std::runtime_error("SFZ has no sample regions");if(std::none_of(result.zones.begin(),result.zones.end(),[](const auto& z){return !z.onRelease;}))throw std::runtime_error("SFZ has no attack regions");if(progress&&!progress(1))throw std::runtime_error("Sample loading cancelled");return result;
     }
     bool hasArticulation(int value)const{for(const auto& z:zones)if(z.articulation==value)return true;return false;}
     int articulationFor(const NoteEvent& note,int fallback,int velocity)const{

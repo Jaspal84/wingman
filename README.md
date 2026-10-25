@@ -133,3 +133,8 @@ verified-bundle install and launch tools for macOS.
 See [Mac build/install/launch and host verification](Documentation/PLAYBACK-SONG-GUITAR-M1.md)
 and [portable regression evidence](Documentation/SESSION-ENGINE-VALIDATION.md).
 Native AU/Logic/MainStage and physical M1 tests must be run on the Mac.
+
+Development instrument upgrade: [user-SFZ banks, guitar controls, licensing,
+validation and exact Mac commands](Documentation/GUITAR-INSTRUMENT.md).
+No production guitar recordings are bundled; verified user libraries enable sampled
+playback, while Basic Synthesis remains explicitly labeled.

@@ -1,0 +1,171 @@
+{
+  "platform": "Linux x86_64",
+  "framework": "JUCE 8.0.6",
+  "build": "Debug C++20",
+  "suites_passed": 19,
+  "failed": 0,
+  "wall_seconds": 20.89,
+  "portable_suites": {
+    "passed": 16,
+    "failed": 0,
+    "wall_seconds": 16.74
+  },
+  "sanitizers": {
+    "tools": [
+      "ASan",
+      "UBSan"
+    ],
+    "leak_detection": false,
+    "mapping_suites_passed": 3,
+    "sampler_suites_passed": 2
+  },
+  "native_macos": "not_run",
+  "logic_mainstage": "not_run",
+  "m1_profile": "not_run",
+  "production_recordings_bundled": 0,
+  "real_demucs_inference": "not_rerun; worker unchanged",
+  "suites": [
+    {
+      "name": "stem_validation",
+      "seconds": 0.286711,
+      "passed": true,
+      "evidence": []
+    },
+    {
+      "name": "guitar_license_manifest",
+      "seconds": 0.128791,
+      "passed": true,
+      "evidence": []
+    },
+    {
+      "name": "standalone_install",
+      "seconds": 0.126664,
+      "passed": true,
+      "evidence": []
+    },
+    {
+      "name": "standalone_migration",
+      "seconds": 0.106425,
+      "passed": true,
+      "evidence": []
+    },
+    {
+      "name": "au_metadata",
+      "seconds": 0.115889,
+      "passed": true,
+      "evidence": []
+    },
+    {
+      "name": "model_worker",
+      "seconds": 0.122869,
+      "passed": true,
+      "evidence": []
+    },
+    {
+      "name": "guitar_performance",
+      "seconds": 0.13538,
+      "passed": true,
+      "evidence": [
+        "2132 tuning/capo/playability/strum checks passed"
+      ]
+    },
+    {
+      "name": "song_guitar",
+      "seconds": 0.00868556,
+      "passed": true,
+      "evidence": [
+        "41 timeline-aligned guitar checks passed"
+      ]
+    },
+    {
+      "name": "guitar",
+      "seconds": 0.0365956,
+      "passed": true,
+      "evidence": [
+        "326 guitar generation/render checks passed"
+      ]
+    },
+    {
+      "name": "guitar_audio",
+      "seconds": 0.255885,
+      "passed": true,
+      "evidence": [
+        "773887 guitar generation/render checks passed"
+      ]
+    },
+    {
+      "name": "tempo",
+      "seconds": 0.130084,
+      "passed": true,
+      "evidence": [
+        "27 tempo tests passed"
+      ]
+    },
+    {
+      "name": "advanced_chords",
+      "seconds": 0.0420482,
+      "passed": true,
+      "evidence": [
+        "1148 advanced chord tests passed"
+      ]
+    },
+    {
+      "name": "dsp",
+      "seconds": 0.0107426,
+      "passed": true,
+      "evidence": [
+        "15 DSP checks passed"
+      ]
+    },
+    {
+      "name": "harmony",
+      "seconds": 13.8213,
+      "passed": true,
+      "evidence": [
+        "Synthetic held-chord accuracy: 96/96",
+        "Synthetic cadence key accuracy: 24/24",
+        "108 harmony checks passed"
+      ]
+    },
+    {
+      "name": "generation",
+      "seconds": 0.125784,
+      "passed": true,
+      "evidence": [
+        "32708 music checks passed"
+      ]
+    },
+    {
+      "name": "transport",
+      "seconds": 0.00328291,
+      "passed": true,
+      "evidence": [
+        "13 transport checks passed"
+      ]
+    },
+    {
+      "name": "guitar_realtime",
+      "seconds": 0.0329931,
+      "passed": true,
+      "evidence": [
+        "519 polyphony/voice-steal/C++ allocation checks passed"
+      ]
+    },
+    {
+      "name": "sampled_guitar",
+      "seconds": 0.123548,
+      "passed": true,
+      "evidence": [
+        "549 sampled guitar checks passed"
+      ]
+    },
+    {
+      "name": "integration",
+      "seconds": 5.26693,
+      "passed": true,
+      "evidence": [
+        "1435 integration checks passed"
+      ]
+    }
+  ]
+}
