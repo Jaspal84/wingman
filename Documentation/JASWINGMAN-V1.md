@@ -28,3 +28,10 @@ selected Guitar MIDI export/drag, and generated note/config state are connected.
 Linux VST3/standalone build and 9/9 CTest passed (13.27s), including guitar SMF
 readability, PPQ, release pairing and note/config round trip. Guitar audio is not
 implied by this MIDI stage. Musical styles are programmed rules, not an AI model.
+
+Stage 4: original Karplus–Strong-based stereo guitar preview renderer, background
+render/cancel, actual Guitar lane audio publication and 44.1/48k PCM24 exports.
+This is basic synthesis; the five type selections are timbral profiles, not
+realistic sampled instruments. No commercial samples or weights are used.
+Linux build and 10/10 CTest passed (15.34s), including finite/nonclipping stereo
+rendering at both rates, readable exported WAV and cancelled-render preservation.

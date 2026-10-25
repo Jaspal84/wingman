@@ -49,7 +49,7 @@ public:
     juce::Result startModelJob(const juce::String&,const juce::File& input={},bool consent=false);
     void cancelModelJob();
     wingman::ModelJobInfo modelJobStatus() const;
-    juce::Result exportWav(const juce::File&, int track = -1);
+    juce::Result exportWav(const juce::File&, int track = -1,double outputRate=48000);
     void prepareTrackDrag(int);
     juce::Result trackDragFile(int,juce::File&);
     juce::Result exportMidi(const juce::File&);
@@ -87,7 +87,7 @@ public:
     std::vector<wingman::NoteEvent> partNotes(int) const;
     juce::Result editPartNote(int, int, const wingman::NoteEvent&, bool remove);
 
-    juce::Result generateGuitarPart(const wingman::GuitarSettings&);
+    juce::Result generateGuitarPart(const wingman::GuitarSettings&,bool renderAudio=false,double sampleRate=48000);
     wingman::GuitarSettings guitarConfig() const;
     wingman::ModelJobInfo guitarStatus() const;
     void cancelGuitar();

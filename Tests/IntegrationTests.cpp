@@ -305,6 +305,14 @@ int main() {
         wingman::GuitarSettings guitar;check(p.generateGuitarPart(guitar).wasOk(),"start asynchronous guitar MIDI generation");
         for(int wait=0;wait<2000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);
         check(!p.guitarStatus().running&&p.selectedPart()==3&&!p.partNotes(3).empty(),"guitar MIDI generated and selected");
+        check(p.generateGuitarPart(guitar,true,44100).wasOk(),"start background guitar audio render");
+        for(int wait=0;wait<3000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);
+        check(p.guitarStatus().progress==1&&p.trackSnapshot(4).clip&&p.trackSnapshot(4).clip->sampleRate==44100&&p.trackSnapshot(4).clip->audio.getMagnitude(0,p.trackSnapshot(4).clip->audio.getNumSamples())>0.0001,"rendered guitar is real audible 44.1k audio");
+        const auto renderedClip=p.trackSnapshot(4).clip;const auto guitarWav=directory.getChildFile("guitar-44100.wav");check(p.exportWav(guitarWav,4,44100).wasOk(),"export guitar WAV at selected rate");
+        {juce::WavAudioFormat format;std::unique_ptr<juce::AudioFormatReader> r(format.createReaderFor(guitarWav.createInputStream().release(),true));check(r&&r->sampleRate==44100&&r->numChannels==2&&r->bitsPerSample==24,"rendered guitar export is stereo PCM24 at 44.1k");}
+        guitar.bars=32;check(p.generateGuitarPart(guitar,true).wasOk(),"start cancellable guitar render");p.cancelGuitar();
+        for(int wait=0;wait<1000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);
+        check(!p.guitarStatus().running&&p.trackSnapshot(4).clip==renderedClip,"cancelled guitar rendering preserves existing audio");guitar.bars=4;
         const auto guitarNotes=p.partNotes(3);const auto guitarMidi=directory.getChildFile("guitar.mid");check(p.exportMidi(guitarMidi).wasOk(),"export guitar SMF");
         {juce::MidiFile file;auto stream=guitarMidi.createInputStream();check(stream&&file.readFrom(*stream)&&file.getTimeFormat()==960,"guitar MIDI file readable at 960 PPQ");auto seq=*file.getTrack(0);seq.updateMatchedPairs();int attacks=0;for(int e=0;e<seq.getNumEvents();++e){const auto* event=seq.getEventPointer(e);if(event->message.isNoteOn()){++attacks;check(event->noteOffObject!=nullptr&&event->message.getChannel()<=6,"guitar string channels and matched releases");}}check(attacks==static_cast<int>(guitarNotes.size()),"all guitar notes exported");}
         juce::MemoryBlock guitarState;p.getStateInformation(guitarState);restored.setStateInformation(guitarState.getData(),static_cast<int>(guitarState.getSize()));

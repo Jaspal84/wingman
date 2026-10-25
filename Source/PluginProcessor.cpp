@@ -4,6 +4,7 @@
 #include <limits>
 #include "MIDI/MidiExport.h"
 #include "Music/GuitarState.h"
+#include "Music/GuitarRenderer.h"
 #include "Files/DragFileStore.h"
 namespace {
 constexpr double maxClipSeconds = 120.0;
@@ -334,7 +335,8 @@ juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
      if(activePart==3){numerator=guitarSettings.numerator;denominator=guitarSettings.denominator;}}
     return wingman::writeMidi(file,events,tempoCopy,numerator,denominator,length,name);
 }
-juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
+juce::Result WingmanProcessor::exportWav(const juce::File& file, int track,double outputRate) {
+    if(outputRate!=44100&&outputRate!=48000)return juce::Result::fail("Export rate must be 44.1 or 48 kHz");
     std::array<wingman::Track,5> snapshot;
     { const juce::ScopedLock lock(mutex); snapshot = tracks; }
     if (track >= 0) {
@@ -348,15 +350,15 @@ juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
     juce::TemporaryFile temporary(file);
     {
         juce::WavAudioFormat wav;
-        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(temporary.getFile()),48000,2,24,{},0));
+        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(temporary.getFile()),outputRate,2,24,{},0));
         if (!writer) return juce::Result::fail("Cannot write WAV");
         juce::AudioBuffer<float> block(2,1024);
-        const auto total = static_cast<juce::int64>(std::ceil(duration * 48000));
+        const auto total = static_cast<juce::int64>(std::ceil(duration * outputRate));
         for (juce::int64 pos = 0; pos < total; pos += 1024) {
             const int n = static_cast<int>(std::min<juce::int64>(1024,total-pos)); block.clear();
             for (const auto& t : snapshot) if (t.clip && !t.mute && (!solo || t.solo))
                 for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < n; ++i)
-                    block.addSample(ch,i,wingman::interpolate(*t.clip,ch,(pos+i)*t.clip->sampleRate/48000.0)*t.gain*wingman::balanceGain(t.pan,ch));
+                    block.addSample(ch,i,wingman::interpolate(*t.clip,ch,(pos+i)*t.clip->sampleRate/outputRate)*t.gain*wingman::balanceGain(t.pan,ch));
             // Saturate PCM mixdown instead of wrapping on overload.
             for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < n; ++i) block.setSample(ch,i,juce::jlimit(-1.0f,1.0f,block.getSample(ch,i)));
             if (!writer->writeFromAudioSampleBuffer(block,0,n)) return juce::Result::fail("WAV write failed");
@@ -495,15 +497,23 @@ juce::Result WingmanProcessor::trackDragFile(int track,juce::File& file){
 wingman::GuitarSettings WingmanProcessor::guitarConfig()const{const juce::ScopedLock lock(mutex);return guitarSettings;}
 wingman::ModelJobInfo WingmanProcessor::guitarStatus()const{const juce::ScopedLock lock(mutex);return {guitarBusy.load(),guitarProgress.load(),guitarMessage,{}};}
 void WingmanProcessor::cancelGuitar(){guitarWorker.request_stop();}
-juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config){
+juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config,bool renderAudio,double sampleRate){
     if(guitarBusy.exchange(true))return juce::Result::fail("Guitar generation is already running");
-    std::vector<wingman::Chord> harmony;int keyCopy;juce::String text;
-    {const juce::ScopedLock lock(mutex);harmony=chords;keyCopy=transpose;text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
-    guitarWorker.start([this,config,harmony,keyCopy,text](wingman::CancellationToken token){
+    std::vector<wingman::Chord> harmony;int keyCopy;double tempoCopy;juce::String text;
+    {const juce::ScopedLock lock(mutex);tempoCopy=bpm;harmony=chords;keyCopy=transpose;text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
+    guitarWorker.start([this,config,harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy](wingman::CancellationToken token){
         try{auto notes=wingman::generateGuitar(harmony,keyCopy,config,[&]{return !token.stop_requested();});
+            std::shared_ptr<const wingman::Clip> rendered;
+            if(renderAudio){
+                {const juce::ScopedLock lock(mutex);guitarMessage="Rendering basic plucked-string synthesis...";}
+                const auto audio=wingman::renderGuitar(notes,config,tempoCopy,sampleRate,[&](double p){guitarProgress=0.1+p*0.85;return !token.stop_requested();});
+                auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=sampleRate;clip->name="Basic synthesized guitar";clip->audio.setSize(2,static_cast<int>(audio.channels[0].size()));
+                for(int ch=0;ch<2;++ch)clip->audio.copyFrom(ch,0,audio.channels[static_cast<std::size_t>(ch)].data(),clip->audio.getNumSamples());rendered=clip;
+            }
             if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");
             const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");if(text!=chordText||keyCopy!=transpose)throw std::runtime_error("Harmony changed; regenerate guitar");
-            guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage="Guitar MIDI generated; audio requires Render WAV";
+            if(renderAudio){if(bpm!=tempoCopy)throw std::runtime_error("Tempo changed; render guitar again");tracks[4].clip.swap(rendered);++audioRevision;}
+            guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage=renderAudio?"Guitar WAV rendered with basic synthesis (not sampled realism)":"Guitar MIDI generated; audio requires Render WAV";
         }catch(const std::exception& ex){const juce::ScopedLock lock(mutex);guitarMessage=ex.what();}guitarBusy=false;
     });return juce::Result::ok();
 }
