@@ -61,6 +61,8 @@ public:
     void setKey(int);
     int key() const;
     void generateMidi();
+    void setVoiceLeading(bool);
+    bool voiceLeadingEnabled() const;
     void setPreview(bool);
     bool preview() const;
     void play();
@@ -110,6 +112,7 @@ private:
     wingman::AudioDragCache audioDragCache;
     double engineRate = 44100, bpm = 120, seconds = 0;
     int transpose = 0, editorWidth = 1200, editorHeight = 760;
+    bool voiceLeading=false;
     bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;
     std::vector<wingman::Chord> chords;
     juce::String projectTitle="Untitled session";

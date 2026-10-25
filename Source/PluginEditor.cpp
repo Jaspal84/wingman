@@ -426,18 +426,20 @@ void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
         if (clicked >= cursor && clicked < cursor+chord->beats) {
             auto* dialog = new juce::AlertWindow("Edit chord","Root, quality, inversion and duration",juce::MessageBoxIconType::NoIcon);
             dialog->addComboBox("root",keyNames,"Root"); dialog->getComboBoxComponent("root")->setSelectedId(chord->root+1);
-            dialog->addComboBox("quality",{"Major","Minor","Dominant 7","Major 7","Minor 7","Sus2","Sus4","Diminished"},"Quality");
+            dialog->addComboBox("quality",{"Major","Minor","Dominant 7","Major 7","Minor 7","Sus2","Sus4","Diminished","Major 9","Minor 9","Add9","Minor add9","Dominant 9","Dominant 11","Minor 11","Major 13","Minor 13","Dominant 13","7 flat9","7 sharp9","7 sharp11","7 flat13","Major 11","Major 6","Minor 6"},"Quality");
             dialog->getComboBoxComponent("quality")->setSelectedId(static_cast<int>(chord->quality)+1);
-            dialog->addComboBox("inversion",{"Root position","First","Second","Third (seventh chords)"},"Inversion");
+            dialog->addComboBox("inversion",{"Root position","First","Second","Third","Fourth","Fifth","Sixth","Seventh"},"Inversion");
             dialog->getComboBoxComponent("inversion")->setSelectedId(chord->inversion+1);
+            juce::StringArray bassNames{"Chord bass"};bassNames.addArray(keyNames);dialog->addComboBox("bass",bassNames,"Slash bass");dialog->getComboBoxComponent("bass")->setSelectedId(chord->bass+2);
             dialog->addTextEditor("beats",juce::String(chord->beats),"Duration in beats (0.25-32)");
             dialog->addButton("Apply",1); dialog->addButton("Cancel",0);
             dialog->enterModalState(true,juce::ModalCallbackFunction::create([safe = juce::Component::SafePointer<WingmanEditor>(this),dialog,tokens,i](int result) mutable {
                 if (!safe || result != 1) return;
-                const juce::StringArray suffix{"","m","7","maj7","m7","sus2","sus4","dim"};
+                const juce::StringArray suffix{"","m","7","maj7","m7","sus2","sus4","dim","maj9","m9","add9","madd9","9","11","m11","maj13","m13","13","7b9","7#9","7#11","7b13","maj11","6","m6"};
                 const int root = dialog->getComboBoxComponent("root")->getSelectedId()-1;
                 const int quality = dialog->getComboBoxComponent("quality")->getSelectedId()-1;
-                tokens.set(i,keyNames[root]+suffix[quality]+"^"+juce::String(dialog->getComboBoxComponent("inversion")->getSelectedId()-1)+":"+dialog->getTextEditorContents("beats"));
+                const int bass=dialog->getComboBoxComponent("bass")->getSelectedId()-2;
+                tokens.set(i,keyNames[root]+suffix[quality]+(bass>=0?"/"+keyNames[bass]:"")+"^"+juce::String(dialog->getComboBoxComponent("inversion")->getSelectedId()-1)+":"+dialog->getTextEditorContents("beats"));
                 const auto text = tokens.joinIntoString(" ");
                 const auto outcome = safe->processor.setProgression(text);
                 if (outcome.wasOk()) safe->chordInput.setText(text);

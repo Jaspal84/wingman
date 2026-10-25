@@ -44,3 +44,12 @@ call was removed. Synthetic clicks and rhythm loops pass at 80/100/120/140 BPM;
 silence and cancellation are covered. Linux build and 11/11 CTest passed (19.25s),
 including automatic-import analysis and explicit apply. No real-song accuracy or
 meter-detection claim. Tap Tempo and detailed controls are integrated in Stage 7.
+
+Stage 6: advanced chord parsing/canonical names, slash bass, extended chord MIDI,
+optional voice leading, matching guitar voicings, and eight seeded cinematic
+style-rule families. Existing eight-quality chord detection is preserved; it is
+not advertised as a detector of all new extensions. Linux build and 12/12 CTest
+passed (13.80s), including 16 advanced chord forms, malformed input rejection,
+slash bass voicing, template validity across styles/seeds, and readable extended
+voice-led MIDI with matched releases. The expanded chord editor includes slash
+bass and all supported qualities. No external AI chord model is downloaded.

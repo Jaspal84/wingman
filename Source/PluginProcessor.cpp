@@ -231,7 +231,7 @@ juce::Result WingmanProcessor::setProgression(const juce::String& text) {
     for (const auto& token : tokens) {
         if (token.isEmpty()) continue;
         auto chord = wingman::parseChord(token.toStdString());
-        if (!chord) return juce::Result::fail("Use C, Am, G7, Cmaj7, Dm7, Csus2, Csus4, Bdim; optional ^inversion:beats");
+        if (!chord) return juce::Result::fail("Use valid chords (Am9, Fmaj7, Cadd9, G7(b9), C/E); optional ^inversion:beats");
         parsed.push_back(*chord);
     }
     if (parsed.empty() || parsed.size() > 128) return juce::Result::fail("Enter 1-128 valid chord tokens");
@@ -244,7 +244,7 @@ juce::String WingmanProcessor::progression() const { const juce::ScopedLock lock
 void WingmanProcessor::rebuildMidi() {
     if(activePart==3){sequence=wingman::patternSequence(guitarNotes);sequenceLength=guitarSettings.bars*guitarSettings.numerator*4.0/guitarSettings.denominator;}
     else if (activePart >= 0) { sequence = wingman::patternSequence(parts[static_cast<std::size_t>(activePart)]); sequenceLength = settings[static_cast<std::size_t>(activePart)].bars*4.0; }
-    else { sequence = wingman::makeChords(chords, transpose); sequenceLength = wingman::progressionBeats(chords); }
+    else { sequence = wingman::makeChords(chords, transpose,voiceLeading); sequenceLength = wingman::progressionBeats(chords); }
     panic = true; seconds = 0;
 }
 void WingmanProcessor::selectPart(int part) { const juce::ScopedLock lock(mutex); activePart = juce::jlimit(-1,3,part); generated = activePart < 0 || (activePart==3?!guitarNotes.empty():!parts[static_cast<std::size_t>(activePart)].empty()); rebuildMidi(); }
@@ -366,6 +366,7 @@ juce::Result WingmanProcessor::exportWav(const juce::File& file, int track,doubl
 void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
     juce::ValueTree state("Wingman");
     const juce::ScopedLock lock(mutex);
+    state.setProperty("voiceLeading",voiceLeading,nullptr);
     state.setProperty("projectTitle",projectTitle,nullptr); state.setProperty("inferencePython",inferencePython,nullptr); state.setProperty("inferenceModels",inferenceModels,nullptr);
     state.setProperty("width",editorWidth,nullptr); state.setProperty("height",editorHeight,nullptr);
     state.setProperty("hostSync",syncEnabled,nullptr); state.setProperty("version",2,nullptr); state.setProperty("bpm",bpm,nullptr); state.setProperty("key",transpose,nullptr);
@@ -450,6 +451,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
         } catch(...) { for(auto& part : parts)part.clear(); activePart=-1; }
     }
     try{wingman::loadGuitar(state["guitar"],guitarSettings,guitarNotes);if(static_cast<int>(state.getProperty("activePart",-1))==3&&!guitarNotes.empty())activePart=3;}catch(...){guitarSettings={};guitarNotes.clear();}
+    voiceLeading=state.getProperty("voiceLeading",false);
     syncEnabled=state.getProperty("hostSync",false); hostClock.reset();
     generated = state["generated"]; previewEnabled = state["preview"]; playing = recording = false; rebuildMidi();
 }
@@ -540,3 +542,6 @@ juce::Result WingmanProcessor::startTempoAnalysis(int track){
         }
     });return juce::Result::ok();
 }
+
+void WingmanProcessor::setVoiceLeading(bool enabled){const juce::ScopedLock lock(mutex);voiceLeading=enabled;rebuildMidi();}
+bool WingmanProcessor::voiceLeadingEnabled()const{const juce::ScopedLock lock(mutex);return voiceLeading;}

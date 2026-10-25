@@ -3,7 +3,7 @@
 namespace wingman {
 std::array<int,6> guitarVoicing(const Chord& chord,int transpose){
     unsigned target=0;for(auto note:chord.notes(transpose))target|=1u<<(note%12);
-    const int bass=(chord.root+transpose+120)%12;
+    const int bass=((chord.bass>=0?chord.bass:chord.root)+transpose+120)%12;
     std::array<int,6> best{-1,-1,-1,-1,-1,-1},candidate=best;double bestScore=1e9;
     for(int position=0;position<=9;++position){
         std::function<void(int,unsigned,int,int,int)> visit=[&](int string,unsigned mask,int count,int first,int sum){
@@ -65,13 +65,13 @@ std::vector<NoteEvent> generateGuitar(const std::vector<Chord>& harmony,int tran
         std::vector<int> strings;for(int string=0;string<6;++string)if(frets[static_cast<std::size_t>(string)]>=0)strings.push_back(string);
         if(stroke<0)std::reverse(strings.begin(),strings.end());
         if(stroke<0&&strings.size()>4)strings.resize(4);
-        if(picked){const auto string=strings[static_cast<std::size_t>(step)%strings.size()];strings={string};}
+        if(picked){const auto string=strings[static_cast<std::size_t>(step)%strings.size()];const int bassString=*std::min_element(strings.begin(),strings.end());strings={string};if(s.technique==GuitarTechnique::Hybrid&&step%2==0&&string!=bassString)strings.insert(strings.begin(),bassString);}
         int order=0;
         for(int string:strings){
             const double jitter=s.humanize?(unit()-0.5)*0.02:0;
             const double beat=std::clamp(at+order++*0.018+jitter,bar*barBeats,total-0.01);
             const bool accent=step==0||step==6;
-            const int velocity=std::clamp(static_cast<int>(43+s.energy*55+(accent?12:0)+(stroke<0?-15:0)+(string<2&&stroke>0?6:0)+(s.humanize?(unit()-0.5)*10:0)),1,127);
+            const int velocity=std::clamp(static_cast<int>(43+s.energy*55+(accent?12:0)+(s.technique==GuitarTechnique::Accents?(accent?14:-12):0)+(stroke<0?-15:0)+(string<2&&stroke>0?6:0)+(s.humanize?(unit()-0.5)*10:0)),1,127);
             const double length=s.technique==GuitarTechnique::PalmMute?0.15:s.technique==GuitarTechnique::Accents?0.45:0.78;
             notes.push_back({beat,std::min(length,total-beat),guitarTuning[static_cast<std::size_t>(string)]+frets[static_cast<std::size_t>(string)],velocity,string+1});
         }
