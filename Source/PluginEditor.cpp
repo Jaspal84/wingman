@@ -161,7 +161,7 @@ void WingmanEditor::importTrack(int i) {
             if (!safe || fc.getResult() == juce::File{}) return;
             auto result = safe->processor.importWav(i,fc.getResult());
             safe->showResult(result,"Imported " + fc.getResult().getFileName());
-            if (result.wasOk()) safe->status.setText(safe->processor.detectTempo(i),juce::dontSendNotification);
+            if (result.wasOk()) safe->status.setText("Imported; background tempo analysis started",juce::dontSendNotification);
             safe->refresh();
         });
 }
@@ -319,6 +319,8 @@ void WingmanEditor::paint(juce::Graphics& g) {
             if (x <= 1) { g.setColour(juce::Colours::white.withAlpha(0.8f)); g.drawVerticalLine(bounds.getX()+static_cast<int>(x*bounds.getWidth()),static_cast<float>(bounds.getY()),static_cast<float>(bounds.getBottom())); }
         }
     }
+    const auto pulse=processor.tempoSnapshot();
+    if(pulse.valid){g.setColour(juce::Colours::yellow.withAlpha(0.3f));for(double beat:pulse.beats)if(beat<=duration)for(const auto& bounds:waveformBounds)g.drawVerticalLine(bounds.getX()+static_cast<int>(beat/duration*bounds.getWidth()),static_cast<float>(bounds.getY()),static_cast<float>(bounds.getBottom()));}
     const auto harmony = processor.analysisSnapshot();
     for (const auto& region : harmony.regions) {
         const auto x = 282.0f+static_cast<float>(region.start/duration*598);

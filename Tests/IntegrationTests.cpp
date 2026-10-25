@@ -302,6 +302,11 @@ int main() {
                 check(p.importWav(lane,visualFile).wasOk(),"visual fixture import");
             }
         }
+        {const auto pulseFile=directory.getChildFile("tempo-auto.wav");juce::AudioBuffer<float> pulse(2,48000*5);pulse.clear();for(int beat=0;beat<9;++beat){const int at=static_cast<int>((0.1+beat*0.6)*48000);for(int i=0;i<400&&at+i<pulse.getNumSamples();++i)for(int ch=0;ch<2;++ch)pulse.setSample(ch,at+i,static_cast<float>(std::exp(-i/60.0)*std::sin(i*0.7)));}
+         {juce::WavAudioFormat wav;std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(pulseFile),48000,2,24,{},0));check(writer&&writer->writeFromAudioSampleBuffer(pulse,0,pulse.getNumSamples()),"create automatic tempo fixture");}
+         const double before=p.tempo();check(p.importWav(4,pulseFile).wasOk(),"tempo analysis automatically starts on import");
+         for(int wait=0;wait<2000&&p.tempoAnalysisStatus().running;++wait)juce::Thread::sleep(5);
+         const auto measured=p.tempoSnapshot();check(measured.valid&&std::abs(measured.bpm-100)<1&&p.tempo()==before,"analyzed BPM comes from audio and does not impersonate project default");check(p.applyDetectedTempo().wasOk()&&std::abs(p.tempo()-100)<1,"explicit apply uses measured tempo");}
         wingman::GuitarSettings guitar;check(p.generateGuitarPart(guitar).wasOk(),"start asynchronous guitar MIDI generation");
         for(int wait=0;wait<2000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);
         check(!p.guitarStatus().running&&p.selectedPart()==3&&!p.partNotes(3).empty(),"guitar MIDI generated and selected");

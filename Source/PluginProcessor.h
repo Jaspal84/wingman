@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
+#include "Analysis/TempoAnalysis.h"
 #include "Music/GuitarRhythmGenerator.h"
 #include "Audio/AudioDragCache.h"
 #include "AI/ModelManager/ModelTypes.h"
@@ -91,6 +92,12 @@ public:
     wingman::GuitarSettings guitarConfig() const;
     wingman::ModelJobInfo guitarStatus() const;
     void cancelGuitar();
+    juce::Result startTempoAnalysis(int);
+    void cancelTempoAnalysis();
+    wingman::TempoResult tempoSnapshot() const;
+    wingman::ModelJobInfo tempoAnalysisStatus() const;
+    int tempoSourceTrack() const;
+    juce::Result applyDetectedTempo();
     juce::Result startAnalysis(int);
     void cancelAnalysis();
     bool analysisIsRunning() const { return analysisBusy.load(); }
@@ -133,6 +140,14 @@ private:
     std::atomic<bool> guitarBusy{false};
     std::atomic<double> guitarProgress{0};
     juce::String guitarMessage="Generate a guitar MIDI pattern";
+    wingman::BackgroundThread tempoWorker;
+    juce::CriticalSection tempoControlMutex;
+    int pendingTempo=-1,tempoTrack=-1;
+    std::shared_ptr<const wingman::Clip> tempoClip;
+    std::atomic<bool> tempoBusy{false};
+    std::atomic<double> tempoProgress{0};
+    wingman::TempoResult tempoResult;
+    juce::String tempoMessage="No analyzed tempo available";
     wingman::BackgroundThread analysisThread;
     wingman::BackgroundThread dragCleanupThread;
     std::unique_ptr<wingman::ModelJob> modelJob;

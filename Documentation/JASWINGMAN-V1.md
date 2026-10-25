@@ -35,3 +35,12 @@ This is basic synthesis; the five type selections are timbral profiles, not
 realistic sampled instruments. No commercial samples or weights are used.
 Linux build and 10/10 CTest passed (15.34s), including finite/nonclipping stereo
 rendering at both rates, readable exported WAV and cancelled-render preservation.
+
+Stage 5: automatic background onset/pulse analysis on import, recording, model
+stem import and guitar rendering. Results, half/double candidates, heuristic
+confidence and beat markers are separate from project BPM; applying the result
+is explicit and disallowed during DAW Sync. Existing synchronous detectTempo UI
+call was removed. Synthetic clicks and rhythm loops pass at 80/100/120/140 BPM;
+silence and cancellation are covered. Linux build and 11/11 CTest passed (19.25s),
+including automatic-import analysis and explicit apply. No real-song accuracy or
+meter-detection claim. Tap Tempo and detailed controls are integrated in Stage 7.
