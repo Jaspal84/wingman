@@ -167,6 +167,8 @@ int main() {
         check(!p.analysisIsRunning() && !harmony.regions.empty() && harmony.regions.front().chord.root==0,"background analysis completes with detected C chord");
         check(p.exportDetectedMidi(directory.getChildFile("detected-timeline.mid")).wasOk(),"export actual detected time-aligned chord regions");
         check(!p.progression().contains("C:"),"analysis does not silently replace editable progression");check(p.applyDetectedChords().wasOk()&&p.progression().contains("C:")&&p.key()==0,"explicit detected duration progression applied");
+        check(p.correctDetectedChord(0,"Cm").wasOk()&&p.analysisSnapshot().regions.front().chord.minor,"manually correct detected chord without changing region time");check(p.correctDetectedChord(0,"C").wasOk(),"restore detected fixture chord");
+        check(p.generateGuitarPart(wingman::GuitarSettings{},false,48000,true).wasOk(),"generate guitar from actual analyzed song timeline");for(int wait=0;wait<1000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);check(p.guitarStatus().progress==1&&!p.partNotes(3).empty(),"song-follow guitar publishes playable MIDI notes");for(const auto& note:p.partNotes(3))check((note.beat+note.duration)*60/p.tempo()<=harmony.regions.back().end+.001,"guitar notes end within actual detected song");
         p.cancelAnalysis();
         p.setProgression("C Am F G"); p.setKey(0);
         for(int part=0;part<3;++part) {

@@ -95,7 +95,7 @@ public:
     std::vector<wingman::NoteEvent> partNotes(int) const;
     juce::Result editPartNote(int, int, const wingman::NoteEvent&, bool remove);
 
-    juce::Result generateGuitarPart(const wingman::GuitarSettings&,bool renderAudio=false,double sampleRate=48000);
+    juce::Result generateGuitarPart(const wingman::GuitarSettings&,bool renderAudio=false,double sampleRate=48000,bool followSong=false);
     wingman::GuitarSettings guitarConfig() const;
     wingman::ModelJobInfo guitarStatus() const;
     void cancelGuitar();
@@ -113,6 +113,7 @@ public:
     juce::Result startAnalysis(int);
     juce::Result applyDetectedKey();
     juce::Result applyDetectedChords();
+    juce::Result correctDetectedChord(int,const juce::String&);
     juce::Result exportDetectedMidi(const juce::File&);
     void cancelAnalysis();
     bool analysisIsRunning() const { return analysisBusy.load(); }
@@ -161,6 +162,7 @@ private:
     juce::CriticalSection harmonicControl;
     int pendingHarmony=-1;
     std::uint64_t analysisRevision=0;
+    std::atomic<std::uint64_t> analysisGeneration{0};
     int harmonyBaseKey=0;
     int effectiveKey()const{return (transpose-harmonyBaseKey+12)%12;}
     wingman::GuitarSettings guitarSettings;

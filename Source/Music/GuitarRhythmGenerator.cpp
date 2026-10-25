@@ -27,7 +27,7 @@ std::array<int,6> guitarVoicing(const Chord& chord,int transpose){
     return best;
 }
 void validateGuitarSettings(const GuitarSettings& s){
-    if(s.bars<1||s.bars>32||s.variation<0||s.variation>3||
+    if(s.bars<1||s.bars>128||s.variation<0||s.variation>3||
        (s.numerator!=3&&s.numerator!=4&&s.numerator!=6)||(s.denominator!=4&&s.denominator!=8))throw std::invalid_argument("Invalid guitar length, variation or meter");
     for(double value:{s.energy,s.density,s.swing})if(!std::isfinite(value)||value<0||value>1)throw std::invalid_argument("Guitar parameters must be 0-1");
     if(static_cast<int>(s.technique)<0||static_cast<int>(s.technique)>7||static_cast<int>(s.style)<0||static_cast<int>(s.style)>7||static_cast<int>(s.type)<0||static_cast<int>(s.type)>4)throw std::invalid_argument("Invalid guitar selection");

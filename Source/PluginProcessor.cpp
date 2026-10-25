@@ -5,6 +5,7 @@
 #include "MIDI/MidiExport.h"
 #include "Music/GuitarState.h"
 #include "Music/GuitarRenderer.h"
+#include "Music/SongGuitar.h"
 #include "Files/DragFileStore.h"
 namespace {
 constexpr double maxClipSeconds = 120.0;
@@ -39,7 +40,7 @@ juce::Result WingmanProcessor::startAnalysis(int lane){
             double energies[2]{};for(int c=0;c<2;++c)for(int i=0;i<clip->audio.getNumSamples();++i){double v=clip->audio.getSample(c,i);energies[c]+=v*v;}
             auto result=wingman::analyseHarmony(clip->audio.getReadPointer(energies[1]>energies[0]?1:0),clip->audio.getNumSamples(),clip->sampleRate,[&](double p){analysisProgress=p;return !token.stop_requested();});
             const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Analysis cancelled");if(audioRevision.load()!=revision)throw std::runtime_error("Audio changed; analyzing latest queued import");
-            analysis=std::move(result);analysisRevision=revision;analysisProgress=1;
+            analysis=std::move(result);++analysisGeneration;analysisRevision=revision;analysisProgress=1;
             const juce::StringArray keys{"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"};
             analysisStatus=analysis.regions.empty()?"No reliable harmonic content found":"Detected "+keys[analysis.keyRoot]+(analysis.minor?" minor":" major")+" | key margin "+juce::String(analysis.keyConfidence*100,0)+"% | "+juce::String(static_cast<int>(analysis.regions.size()))+" chord regions. Apply explicitly; ambiguous/modulating music requires correction.";
         }catch(const std::exception& e){const juce::ScopedLock lock(mutex);analysisStatus=e.what();}
@@ -51,6 +52,7 @@ juce::Result WingmanProcessor::applyDetectedChords(){
     juce::StringArray tokens;for(const auto& r:result.regions){if(r.end-r.start<.1)continue;double remaining=(r.end-r.start)*bpm/60;while(remaining>.001){double beats=std::min(32.0,remaining);tokens.add(juce::String(wingman::chordName(r.chord))+":"+juce::String(beats,4));remaining-=beats;}if(tokens.size()>128)return juce::Result::fail("Detected timeline exceeds 128 editable chord tokens; use song-follow guitar instead");}
     if(tokens.isEmpty())return juce::Result::fail("No supported chord regions");auto applied=setProgression(tokens.joinIntoString(" "));if(applied.wasOk()){harmonyBaseKey=result.keyRoot;transpose=result.keyRoot;rebuildMidi();}return applied;
 }
+juce::Result WingmanProcessor::correctDetectedChord(int index,const juce::String& text){const juce::ScopedLock lock(mutex);auto chord=wingman::parseChord(text.toStdString());if(!chord||analysisRevision!=audioRevision.load()||index<0||index>=static_cast<int>(analysis.regions.size()))return juce::Result::fail("Select a current detected region and a valid chord");analysis.regions[static_cast<std::size_t>(index)].chord=*chord;++analysisGeneration;return juce::Result::ok();}
 juce::Result WingmanProcessor::exportDetectedMidi(const juce::File& file){
     const auto result=analysisSnapshot();if(result.regions.empty())return juce::Result::fail("Analyze imported audio first");const double rate=tempo();juce::MidiMessageSequence events;
     for(const auto& region:result.regions)for(int pitch:region.chord.notes()){auto on=juce::MidiMessage::noteOn(1,pitch,static_cast<juce::uint8>(96));on.setTimeStamp(region.start*rate/60);events.addEvent(on);auto off=juce::MidiMessage::noteOff(1,pitch);off.setTimeStamp(region.end*rate/60);events.addEvent(off);}
@@ -522,13 +524,14 @@ juce::Result WingmanProcessor::loadGuitarLibrary(const juce::File& file){
         const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Sample loading cancelled");guitarLibrary=std::move(library);guitarLibraryPath=file.getFullPathName();sampledGuitar=true;guitarProgress=1;guitarMessage="SFZ verified | "+juce::String(static_cast<double>(guitarLibrary->bytes)/1048576,1)+" MiB | user must hold sample rights";
     }catch(const std::exception& e){const juce::ScopedLock lock(mutex);guitarMessage=e.what();}guitarBusy=false;});return juce::Result::ok();
 }
-juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config,bool renderAudio,double sampleRate){
+juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config,bool renderAudio,double sampleRate,bool followSong){
+    const auto song=followSong?analysisSnapshot():wingman::HarmonicResult{};const auto songRevision=audioRevision.load();const auto songGeneration=analysisGeneration.load();if(followSong&&song.regions.empty())return juce::Result::fail("Analyze imported audio before Generate Guitar from Song");
     if(guitarBusy.exchange(true))return juce::Result::fail("Guitar generation is already running");
     std::vector<wingman::Chord> harmony;int keyCopy;double tempoCopy;juce::String text;std::shared_ptr<const wingman::Clip> originalGuitar;
     {const juce::ScopedLock lock(mutex);tempoCopy=bpm;originalGuitar=tracks[4].clip;harmony=chords;keyCopy=effectiveKey();text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
     std::shared_ptr<const wingman::SampledGuitar> library;bool sampled;double curve;{const juce::ScopedLock lock(mutex);library=guitarLibrary;sampled=sampledGuitar;curve=guitarVelocityCurve;}
-    guitarWorker.start([this,library,sampled,curve,config,harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy,originalGuitar](wingman::CancellationToken token){
-        try{auto notes=wingman::generateGuitar(harmony,keyCopy,config,[&]{return !token.stop_requested();});
+    guitarWorker.start([this,song,songRevision,songGeneration,followSong,library,sampled,curve,config=wingman::GuitarSettings(config),harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy,originalGuitar](wingman::CancellationToken token)mutable{
+        try{auto keep=[&]{return !token.stop_requested();};auto notes=followSong?wingman::guitarFromSong(song,config,tempoCopy,keep):wingman::generateGuitar(harmony,keyCopy,config,keep);
             std::shared_ptr<const wingman::Clip> rendered;
             if(renderAudio){
                 {const juce::ScopedLock lock(mutex);guitarMessage=sampled?"Rendering sampled guitar...":"Rendering basic plucked-string synthesis...";}
@@ -539,7 +542,7 @@ juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings&
                 for(int ch=0;ch<2;++ch)clip->audio.copyFrom(ch,0,audio.channels[static_cast<std::size_t>(ch)].data(),clip->audio.getNumSamples());clip->buildWaveform();rendered=clip;
             }
             if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");
-            const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");if(text!=chordText||keyCopy!=effectiveKey())throw std::runtime_error("Harmony changed; regenerate guitar");
+            const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");if(followSong&&(songRevision!=audioRevision.load()||songGeneration!=analysisGeneration.load()))throw std::runtime_error("Imported song changed; analyze and generate again");if(!followSong&&(text!=chordText||keyCopy!=effectiveKey()))throw std::runtime_error("Harmony changed; regenerate guitar");
             if(renderAudio){if(tracks[4].clip!=originalGuitar)throw std::runtime_error("Guitar lane changed; render again");if(bpm!=tempoCopy)throw std::runtime_error("Tempo changed; render guitar again");tracks[4].clip.swap(rendered);publishPlayback();++audioRevision;startTempoAnalysis(4);}
             guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage=renderAudio?(sampled?"Sampled guitar WAV rendered":"Guitar WAV rendered with basic synthesis (not sampled realism)"):"Guitar MIDI generated; audio requires Render WAV";
         }catch(const std::exception& ex){const juce::ScopedLock lock(mutex);guitarMessage=ex.what();}guitarBusy=false;
