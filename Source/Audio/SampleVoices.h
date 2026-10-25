@@ -4,15 +4,19 @@
 namespace wingman {
 // Fixed voices, predecoded samples: no heap allocation, file reads or locks here.
 class SampleVoices {
-    struct Voice {bool active=false,released=false;int zone=0,note=0,channel=0,velocity=0;double position=0,step=1,age=0,releaseAge=0,gain=0;int articulation=24;};
+    struct Voice {bool active=false,released=false;int zone=0,note=0,channel=0,velocity=0;double position=0,step=1,age=0,releaseAge=0,gain=0;int articulation=24;double releaseLevel=1;};
     std::array<Voice,128> voices{};
     std::array<int,16> sequence{},articulations{};
     const SampledGuitar* library=nullptr;
     std::uint64_t generation=0;
     std::array<double,2> last{},fade{};
-    int fadeRemaining=0;
+    int fadeRemaining=0,stealRemaining=0;
+    std::array<double,2> stealFade{};
+    static double envelope(const GuitarZone& z,double age){if(z.attack>0&&age<z.attack)return age/z.attack;if(z.decay>0&&age<z.attack+z.decay)return 1-(1-z.sustain)*(age-z.attack)/z.decay;return z.sustain;}
+    static double gain(const GuitarZone& z,int channel){return channel==0?(z.pan>0?1-z.pan:1):(z.pan<0?1+z.pan:1);}
     void start(int zone,int note,int channel,int velocity,double rate,int articulation=24){
         auto* voice=&voices[0];for(auto& candidate:voices)if(!candidate.active){voice=&candidate;break;}else if(candidate.age>voice->age)voice=&candidate;
+        if(voice->active){const auto& old=library->zones[static_cast<std::size_t>(voice->zone)];int at=std::min(static_cast<int>(voice->position),old.audio->getNumSamples()-1);double level=voice->released?voice->releaseLevel*std::max(0.0,1-voice->releaseAge/old.release):envelope(old,voice->age);for(int c=0;c<2;++c)stealFade[static_cast<std::size_t>(c)]=stealFade[static_cast<std::size_t>(c)]*stealRemaining/128.0+old.audio->getSample(std::min(c,old.audio->getNumChannels()-1),at)*voice->gain*level*gain(old,c);stealRemaining=128;}
         const auto& z=library->zones[static_cast<std::size_t>(zone)];*voice={true,false,zone,note,channel,velocity,0,z.rate/rate*std::pow(2.0,(note-z.root+z.tune/100)/12),0,0,z.volume*velocity/127.0,articulation};
     }
     void attack(int note,int channel,int velocity,double rate,int articulation){
@@ -21,25 +25,26 @@ class SampleVoices {
     }
     static bool matches(const GuitarZone& z,int note,int channel,int velocity,int articulation){return note>=z.low&&note<=z.high&&velocity>=z.loVel&&velocity<=z.hiVel&&channel>=z.loChan&&channel<=z.hiChan&&(z.articulation<0||z.articulation==articulation);}
     void release(int note,int channel,double rate,int articulation){
-        int velocity=0;for(auto& voice:voices)if(voice.active&&voice.note==note&&voice.channel==channel&&!voice.released&&!library->zones[static_cast<std::size_t>(voice.zone)].onRelease){voice.released=true;voice.releaseAge=0;velocity=voice.velocity;articulation=voice.articulation;}
+        int velocity=0;for(auto& voice:voices)if(voice.active&&voice.note==note&&voice.channel==channel&&!voice.released&&!library->zones[static_cast<std::size_t>(voice.zone)].onRelease){voice.released=true;voice.releaseAge=0;voice.releaseLevel=envelope(library->zones[static_cast<std::size_t>(voice.zone)],voice.age);velocity=voice.velocity;articulation=voice.articulation;}
         if(!velocity)return;for(std::size_t i=0;i<library->zones.size();++i){const auto& z=library->zones[i];if(z.onRelease&&matches(z,note,channel,velocity,articulation)&&(sequence[static_cast<std::size_t>(channel-1)]-1)%z.seqLength+1==z.seqPosition)start(static_cast<int>(i),note,channel,velocity,rate,articulation);}
     }
     void segment(juce::AudioBuffer<float>& output,int first,int end,double rate){
         std::array<double,2> ending{};
         for(auto& voice:voices){if(!voice.active)continue;const auto& z=library->zones[static_cast<std::size_t>(voice.zone)];
             for(int i=first;i<end;++i){if(voice.position>=z.audio->getNumSamples()-1||((voice.released||z.onRelease)&&voice.releaseAge>=z.release)){voice.active=false;break;}
-                double envelope=std::min(1.0,voice.age/.002);if(voice.released||z.onRelease)envelope*=std::max(0.0,1-voice.releaseAge/z.release);
+                double level=voice.released?voice.releaseLevel:envelope(z,voice.age);if(voice.released||z.onRelease)level*=std::max(0.0,1-voice.releaseAge/z.release);
                 int at=static_cast<int>(voice.position);double fraction=voice.position-at;
-                for(int c=0;c<output.getNumChannels();++c){int ch=std::min(c,z.audio->getNumChannels()-1);double v=z.audio->getSample(ch,at)*(1-fraction)+z.audio->getSample(ch,at+1)*fraction;double sample=v*voice.gain*envelope;output.addSample(c,i,static_cast<float>(sample));if(i==end-1&&c<2)ending[static_cast<std::size_t>(c)]+=sample;}
+                for(int c=0;c<output.getNumChannels();++c){int ch=std::min(c,z.audio->getNumChannels()-1);double v=z.audio->getSample(ch,at)*(1-fraction)+z.audio->getSample(ch,at+1)*fraction;double sample=v*voice.gain*level*gain(z,c);output.addSample(c,i,static_cast<float>(sample));if(i==end-1&&c<2)ending[static_cast<std::size_t>(c)]+=sample;}
                 voice.position+=voice.step;voice.age+=1/rate;if(voice.released||z.onRelease)voice.releaseAge+=1/rate;
             }
         }
         for(int i=first;i<end&&fadeRemaining>0;++i){for(int c=0;c<std::min(2,output.getNumChannels());++c){double value=fade[static_cast<std::size_t>(c)]*fadeRemaining/128.0;output.addSample(c,i,static_cast<float>(value));if(i==end-1)ending[static_cast<std::size_t>(c)]+=value;}--fadeRemaining;}
+        for(int i=first;i<end&&stealRemaining>0;++i){for(int c=0;c<std::min(2,output.getNumChannels());++c){double value=stealFade[static_cast<std::size_t>(c)]*stealRemaining/128.0;output.addSample(c,i,static_cast<float>(value));if(i==end-1)ending[static_cast<std::size_t>(c)]+=value;}--stealRemaining;}
         if(end>first)last=ending;
     }
 public:
     int unmapped=0;
-    void reset(){fade=last;fadeRemaining=128;last.fill(0);for(auto& voice:voices)voice.active=false;sequence.fill(0);articulations.fill(0);}
+    void reset(){fade=last;fadeRemaining=128;stealRemaining=0;last.fill(0);for(auto& voice:voices)voice.active=false;sequence.fill(0);articulations.fill(0);}
     void bind(const SampledGuitar* next,std::uint64_t revision){if(next!=library||revision!=generation){reset();unmapped=0;library=next;generation=revision;}}
     void renderTail(juce::AudioBuffer<float>& output,double rate){segment(output,0,output.getNumSamples(),rate);}
     int activeVoices()const{int n=0;for(const auto& v:voices)n+=v.active;return n;}
