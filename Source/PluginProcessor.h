@@ -111,6 +111,9 @@ public:
     int tempoSourceTrack() const;
     juce::Result applyDetectedTempo();
     juce::Result startAnalysis(int);
+    juce::Result applyDetectedKey();
+    juce::Result applyDetectedChords();
+    juce::Result exportDetectedMidi(const juce::File&);
     void cancelAnalysis();
     bool analysisIsRunning() const { return analysisBusy.load(); }
     double analysisPercent() const { return analysisProgress.load(); }
@@ -141,6 +144,7 @@ private:
     std::array<std::vector<wingman::NoteEvent>,3> parts;
     juce::AudioBuffer<float> recordBuffer;
     int recordSamples = 0, recordTrack = 0;
+    std::atomic<bool> recordEnabled{false},recordActive{false};
     wingman::PreviewSynth synth;
     wingman::HostClock hostClock;
     bool syncEnabled=false, hostAvailable=false;
@@ -154,6 +158,11 @@ private:
     std::atomic<double> analysisProgress{0};
     juce::String analysisStatus;
     wingman::HarmonicResult analysis;
+    juce::CriticalSection harmonicControl;
+    int pendingHarmony=-1;
+    std::uint64_t analysisRevision=0;
+    int harmonyBaseKey=0;
+    int effectiveKey()const{return (transpose-harmonyBaseKey+12)%12;}
     wingman::GuitarSettings guitarSettings;
     std::shared_ptr<const wingman::SampledGuitar> guitarLibrary;
     juce::String guitarLibraryPath;
