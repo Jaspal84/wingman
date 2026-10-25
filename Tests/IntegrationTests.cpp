@@ -38,6 +38,12 @@ int main() {
             check(writer && writer->writeFromAudioSampleBuffer(input,0,4800),"create WAV fixture");
         }
         check(p.importWav(0,source).wasOk(),"import valid WAV");
+        p.prepareTrackDrag(0);juce::File dragAudio;
+        for(int wait=0;wait<1000&&p.trackDragFile(0,dragAudio).failed();++wait)juce::Thread::sleep(5);
+        check(dragAudio.existsAsFile(),"independently imported audio is draggable without stem separation");
+        {juce::WavAudioFormat format;std::unique_ptr<juce::AudioFormatReader> decoded(format.createReaderFor(dragAudio.createInputStream().release(),true));
+         check(decoded&&decoded->sampleRate==48000&&decoded->numChannels==2&&decoded->bitsPerSample==24&&decoded->lengthInSamples==4800,"background drag WAV is readable aligned stereo PCM24");}
+
         check(p.importWav(1,directory.getChildFile("missing.wav")).failed(),"reject missing file");
         check(p.importWav(9,source).failed(),"reject invalid track");
         auto clip = p.trackSnapshot(0).clip;

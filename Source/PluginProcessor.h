@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "Audio/Track.h"
+#include "Audio/AudioDragCache.h"
 #include "AI/ModelManager/ModelTypes.h"
 namespace wingman { class ModelJob; }
 #include "Audio/PreviewSynth.h"
@@ -28,7 +29,7 @@ public:
     bool isBusesLayoutSupported(const BusesLayout&) const override;
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
-    const juce::String getName() const override { return "Wingman Pro"; }
+    const juce::String getName() const override { return "JASWINGMAN PRO"; }
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
     double getTailLengthSeconds() const override { return 0.02; }
@@ -48,6 +49,8 @@ public:
     void cancelModelJob();
     wingman::ModelJobInfo modelJobStatus() const;
     juce::Result exportWav(const juce::File&, int track = -1);
+    void prepareTrackDrag(int);
+    juce::Result trackDragFile(int,juce::File&);
     juce::Result exportMidi(const juce::File&);
     juce::Result setProgression(const juce::String&);
     juce::String progression() const;
@@ -92,6 +95,7 @@ public:
 private:
     mutable juce::CriticalSection mutex;
     std::array<wingman::Track,4> tracks;
+    wingman::AudioDragCache audioDragCache;
     double engineRate = 44100, bpm = 120, seconds = 0;
     int transpose = 0, editorWidth = 1200, editorHeight = 760;
     bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;

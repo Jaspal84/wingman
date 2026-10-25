@@ -1,4 +1,4 @@
-# Wingman Pro
+# JASWINGMAN PRO
 
 C++20 / JUCE 8 audio and MIDI workstation plugin under active development. The Linux implementation includes real WAV recording/mixing, spectral harmonic analysis, deterministic bass/drum/melody generation and host-playhead scheduling. **Real HTDemucs CPU inference now passes on a real 20-second stereo music fixture in Linux, including plugin-managed import/export and cancellation. macOS AU validation, Logic/MainStage and M1 performance remain untested. This is not a production-ready release.**
 
@@ -12,7 +12,7 @@ C++20 / JUCE 8 audio and MIDI workstation plugin under active development. The L
 - JUCE host BPM/PPQ/meter/transport/loop reading, sustained-note chase, note ownership, bypass and a fixed preview voice pool. Mock-host validation only.
 - Resizable vector GUI and compatible version-1 plugin state with optional pan/window, generated-note/settings, host-sync and inference-path properties. Audio remains embedded in state.
 
-![Wingman Pro Linux editor](Documentation/Screenshots/wingman-pro-linux.png)
+![JASWINGMAN PRO Linux editor](Documentation/Screenshots/wingman-pro-linux.png)
 
 Actual Linux integration render using synthesized WAV fixtures. This is not a macOS/Logic screenshot or evidence of AI-separated stems.
 
@@ -32,8 +32,8 @@ With Xcode Command Line Tools, CMake and Python 3:
 
 ```sh
 ./Scripts/build-macos.sh
-./Scripts/install-macos.sh 'build-macos/Wingman_artefacts/Release/AU/Wingman Pro.component' --adhoc
-./Scripts/validate-au.sh "$HOME/Library/Audio/Plug-Ins/Components/Wingman Pro.component"
+./Scripts/install-macos.sh 'build-macos/Wingman_artefacts/Release/AU/JASWINGMAN PRO.component' --adhoc
+./Scripts/validate-au.sh "$HOME/Library/Audio/Plug-Ins/Components/JASWINGMAN PRO.component"
 ```
 
 The build script defaults to native arm64 Release and macOS 11+. Set `WINGMAN_ARCHS='arm64;x86_64'` for a supported universal toolchain. Formats: AU, VST3, Standalone. Installation is user-level, preserves an existing same-name bundle and optionally ad-hoc signs a local-development copy; it is not notarized packaging.
@@ -52,7 +52,7 @@ sudo apt-get install -y build-essential cmake ninja-build pkg-config python3 \
 ./Scripts/build-linux.sh -G Ninja
 ```
 
-Linux builds VST3 and Standalone. The application is `build/Wingman_artefacts/Debug/Standalone/Wingman Pro`. A real audio device is needed to validate physical playback/capture. For headless rendering, install `xvfb`/`xauth`; the Linux script uses `xvfb-run` when available and DISPLAY is unset.
+Linux builds VST3 and Standalone. The application is `build/Wingman_artefacts/Debug/Standalone/JASWINGMAN PRO`. A real audio device is needed to validate physical playback/capture. For headless rendering, install `xvfb`/`xauth`; the Linux script uses `xvfb-run` when available and DISPLAY is unset.
 
 Portable JUCE-free DSP/analysis/generation/transport tests:
 

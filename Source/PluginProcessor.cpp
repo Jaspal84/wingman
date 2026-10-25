@@ -492,3 +492,9 @@ juce::Result WingmanProcessor::importStemSet(const std::array<juce::File,4>& fil
     const juce::ScopedLock lock(mutex);for(int i=0;i<4;++i)tracks[static_cast<std::size_t>(i)].clip.swap(loaded[static_cast<std::size_t>(i)]);
     seconds=0;panic=true;++audioRevision;analysis={};return juce::Result::ok();
 }
+
+void WingmanProcessor::prepareTrackDrag(int track){if(validTrack(track))audioDragCache.prepare(track,trackSnapshot(track).clip);}
+juce::Result WingmanProcessor::trackDragFile(int track,juce::File& file){
+    if(!validTrack(track))return juce::Result::fail("Invalid audio lane");
+    prepareTrackDrag(track);return audioDragCache.get(track,trackSnapshot(track).clip,file);
+}

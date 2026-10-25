@@ -96,13 +96,9 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
         pans[n].setName(names[n]+" stereo balance"); pans[n].setDoubleClickReturnValue(true,0);
         pans[n].onValueChange = [this,i,n] { processor.setTrackPan(i,static_cast<float>(pans[n].getValue())); };
         addAndMakeVisible(stemDrags[n]);
-        stemDrags[n].setTooltip("Drag raw separated WAV to DAW (before lane volume/pan). Export WAV includes mixer settings.");
+        stemDrags[n].setTooltip("Drag audio WAV to DAW (before lane volume/pan). Export WAV includes mixer settings.");
         stemDrags[n].prepare=[this,n](juce::File& file){
-            const juce::StringArray rawNames{"vocals.wav","other.wav","bass.wav","drums.wav"};
-            const auto job=processor.modelJobStatus();
-            if(job.outputDirectory==juce::File{})return juce::Result::fail("Separate audio first, or use Export WAV for imported lanes");
-            file=job.outputDirectory.getChildFile(rawNames[static_cast<int>(n)]);
-            return file.existsAsFile()?juce::Result::ok():juce::Result::fail("Stem drag file expired; separate again or use Export WAV");
+            return processor.trackDragFile(static_cast<int>(n),file);
         };
         stemDrags[n].report=dragMidi.report;
         stemExports[n].setButtonText("Export " + names[n]); stemExports[n].onClick = [this,i] { chooseExport(false,i); };
@@ -211,7 +207,7 @@ void WingmanEditor::timerCallback() {
         splitLastMessage=job.message;
         if(job.message!="No model operation has run")splitStatus.setText(job.message+(job.running?" | "+juce::String(job.progress*100,0)+"%":""),juce::dontSendNotification);
     }
-    for(auto& button:stemDrags)button.setEnabled(!job.running && job.outputDirectory!=juce::File{});
+    for(int lane=0;lane<4;++lane){processor.prepareTrackDrag(lane);stemDrags[static_cast<std::size_t>(lane)].setEnabled(processor.trackSnapshot(lane).clip!=nullptr);}
     const bool running = processor.analysisIsRunning();
     cancel.setEnabled(running); detect.setEnabled(!running);
     if (running) status.setText("Analysing harmony: "+juce::String(processor.analysisPercent()*100,0)+"%",juce::dontSendNotification);
@@ -286,7 +282,7 @@ void WingmanEditor::paint(juce::Graphics& g) {
     g.fillAll(wingman::background);
     g.addTransform(juce::AffineTransform::scale(uiScale));
     g.setColour(wingman::panel); g.fillRoundedRectangle(12,12,1176,65,12);
-    g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(21.0f,juce::Font::bold)); g.drawText("WINGMAN PRO",28,26,174,29,juce::Justification::centredLeft);
+    g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(17.0f,juce::Font::bold)); g.drawText("JASWINGMAN PRO",28,26,174,29,juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(11.0f)); g.setColour(juce::Colours::lightgrey);
     const bool processing=processor.analysisIsRunning()||processor.modelJobStatus().running;
     g.setColour(processing?wingman::accent:juce::Colours::grey);g.fillEllipse(1040,64,5,5);
