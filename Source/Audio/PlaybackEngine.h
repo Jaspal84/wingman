@@ -13,7 +13,8 @@ class PlaybackEngine {
     std::atomic<const Snapshot*> current{nullptr},hazard{nullptr};
     std::vector<std::unique_ptr<Snapshot>> retained;
     std::atomic<double> requested{0},visible{0};
-    double cursor=0;
+    double cursor=0,hostLoopStart=0,hostLoopEnd=0;
+    bool hostMode=false;
 public:
     std::atomic<bool> playing{false};
     PlaybackEngine(){publish({},false);}
@@ -27,7 +28,8 @@ public:
     void seek(double seconds){requested.store(seconds);visible.store(seconds);}
     double position()const{return visible.load();}
     // Called once per audio block; optional host seconds are authoritative.
-    void begin(std::optional<double> hostSeconds={},std::optional<bool> hostPlaying={}){
+    void begin(std::optional<double> hostSeconds={},std::optional<bool> hostPlaying={},double loopStart=0,double loopEnd=0){
+        hostMode=hostSeconds.has_value();hostLoopStart=loopStart;hostLoopEnd=loopEnd;
         const auto request=requested.exchange(std::numeric_limits<double>::quiet_NaN());
         if(std::isfinite(request))cursor=request;
         if(hostSeconds&&std::isfinite(*hostSeconds))cursor=*hostSeconds;
@@ -39,11 +41,12 @@ public:
         do{snapshot=current.load();hazard.store(snapshot);}while(current.load()!=snapshot);
         if(playing.load()&&rate>0){bool solo=false;for(const auto& t:snapshot->tracks)solo|=t.solo;
             for(const auto& t:snapshot->tracks){if(!t.clip||t.mute||(solo&&!t.solo))continue;
-                for(int i=0;i<output.getNumSamples();++i){double at=cursor+i/rate;if(snapshot->loop&&snapshot->length>0)at=std::fmod(at,snapshot->length);
+                for(int i=0;i<output.getNumSamples();++i){double at=cursor+i/rate;if(hostMode&&hostLoopEnd>hostLoopStart&&at>=hostLoopEnd)at=hostLoopStart+std::fmod(at-hostLoopStart,hostLoopEnd-hostLoopStart);else if(!hostMode&&snapshot->loop&&snapshot->length>0)at=std::fmod(at,snapshot->length);
                     for(int c=0;c<output.getNumChannels();++c)output.addSample(c,i,interpolate(*t.clip,c,at*t.clip->sampleRate)*t.gain*balanceGain(t.pan,c));}
             }
-            cursor+=output.getNumSamples()/rate;if(snapshot->loop&&snapshot->length>0)cursor=std::fmod(cursor,snapshot->length);visible.store(cursor);
-        }hazard.store(nullptr);
+            cursor+=output.getNumSamples()/rate;if(hostMode&&hostLoopEnd>hostLoopStart&&cursor>=hostLoopEnd)cursor=hostLoopStart+std::fmod(cursor-hostLoopStart,hostLoopEnd-hostLoopStart);else if(!hostMode&&snapshot->loop&&snapshot->length>0)cursor=std::fmod(cursor,snapshot->length);visible.store(cursor);
+        }for(int c=0;c<output.getNumChannels();++c)for(int i=0;i<output.getNumSamples();++i){auto v=output.getSample(c,i);output.setSample(c,i,std::isfinite(v)?std::clamp(v,-1.0f,1.0f):0);}
+        hazard.store(nullptr);
     }
 };
 }

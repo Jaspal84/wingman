@@ -226,6 +226,13 @@ int main() {
         midi.clear();hosted.processBlockBypassed(hostAudio,midi);check(std::abs(hostAudio.getSample(0,100)-0.37f)<1e-6,"bypass preserves dry input");
         released=0;for(auto metadata:midi)released+=metadata.getMessage().isNoteOff();check(released==3,"bypass releases generated notes");
         hosted.setPlayHead(nullptr);hosted.setHostSync(false);
+        {WingmanProcessor partial;partial.prepareToPlay(48000,512);partial.importWav(0,source);partial.setPreview(false);partial.setTempo(93);MockPlayhead head;partial.setPlayHead(&head);partial.setHostSync(true);
+         juce::AudioPlayHead::PositionInfo pos;pos.setBpm(90);pos.setTimeInSeconds(.02);pos.setIsPlaying(true);pos.setTimeSignature(juce::AudioPlayHead::TimeSignature{3,4});head.position=pos;midi.clear();partial.processBlock(block,midi);
+         check(partial.isPlaying()&&std::abs(block.getSample(0,100)-.2f)<.0001f,"seconds-only host timing produces imported audio");check(partial.tempo()==90&&partial.hostPosition()->numerator==3,"host BPM and meter followed");
+         pos=juce::AudioPlayHead::PositionInfo{};pos.setTimeInSamples(960);pos.setIsPlaying(true);head.position=pos;midi.clear();partial.processBlock(block,midi);check(partial.hostPosition().has_value()&&block.getMagnitude(0,512)>.19f,"sample-position-only host timing supported");
+         pos.setIsPlaying(false);head.position=pos;midi.clear();partial.processBlock(block,midi);check(!partial.isPlaying()&&block.getMagnitude(0,512)==0,"host stop silences imported audio");partial.setHostSync(false);check(partial.tempo()==93,"independent tempo restored after host sync");partial.play();midi.clear();partial.processBlock(block,midi);check(block.getMagnitude(0,512)>.19f,"independent transport resumes after sync disabled");}
+        {WingmanProcessor continuous;continuous.prepareToPlay(48000,512);continuous.importWav(0,source);continuous.setPreview(false);continuous.setLooping(true);continuous.play();std::thread edits([&]{for(int i=0;i<300;++i)continuous.setProgression(i%2?"Cmaj9 Am9 Fmaj7 G7":"Dm7 G7 Cmaj7 Fmaj7");});for(int i=0;i<300;++i){midi.clear();continuous.processBlock(block,midi);check(block.getMagnitude(0,512)>.19f,"immutable mixer stays audible during concurrent session edits");}edits.join();}
+
         WingmanProcessor stress;stress.prepareToPlay(48000,512);stress.importWav(0,source);stress.play();
         std::thread controls([&]{for(int i=0;i<1000;++i)stress.setTrackMix(0,static_cast<float>(i%100)/100,false,false);});
         for(int blockIndex=0;blockIndex<100;++blockIndex){midi.clear();stress.processBlock(block,midi);check(std::isfinite(block.getSample(0,100))&&block.getMagnitude(0,512)<=1,"concurrent control edits produce bounded finite audio");}

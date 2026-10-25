@@ -121,6 +121,9 @@ private:
     std::array<wingman::Track,5> tracks;
     wingman::AudioDragCache audioDragCache;
     double engineRate = 44100, bpm = 120, seconds = 0;
+    std::atomic<bool> syncRequested{false};
+    std::atomic<double> independentBpm{120},clockTempo{120};
+    std::optional<wingman::HostFrame> readHostTiming() const;
     wingman::PlaybackEngine trackPlayback;
     void publishPlayback(){trackPlayback.publish(tracks,internalLoop);}
     bool internalLoop=false;
