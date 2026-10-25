@@ -3,6 +3,7 @@
 #include "GUI/Theme.h"
 #include "GUI/FileDragButton.h"
 
+namespace wingman {class GuitarStudioPanel;class CinematicPanel;class TempoPanel;class SettingsPanel;}
 class WingmanEditor final : public juce::AudioProcessorEditor, private juce::Timer, public juce::FileDragAndDropTarget {
 public:
     explicit WingmanEditor(WingmanProcessor&);
@@ -37,6 +38,14 @@ private:
     juce::TextButton detect{"Detect chords/key"}, cancel{"Cancel analysis"};
     bool analysisWasRunning = false;
     juce::TextButton models{"Model Manager"};
+    std::array<juce::TextButton,5> viewTabs;
+    int activeView=0;
+    std::vector<juce::Component*> mainContent;
+    std::unique_ptr<wingman::GuitarStudioPanel> guitarPanel;
+    std::unique_ptr<wingman::CinematicPanel> cinematicPanel;
+    std::unique_ptr<wingman::TempoPanel> tempoPanel;
+    std::unique_ptr<wingman::SettingsPanel> settingsPanel;
+    void selectView(int);
     float uiScale = 1;
     std::array<juce::Rectangle<int>,5> waveformBounds;
     juce::Rectangle<int> chordBounds, midiBounds;

@@ -4,17 +4,23 @@ C++20 / JUCE 8 audio and MIDI workstation plugin under active development. The L
 
 ## Implemented and tested on Linux
 
-- Four actual waveform lanes: Vocals, Drums, Bass, Other; WAV import, input recording, gain, multi-solo, mute and stereo balance.
-- Cancellable background key/chord/tuning analysis with eight chord qualities, confidence margins and timed labels. Synthetic tests: 96/96 held chords and 24/24 cadence keys; no recorded-song accuracy claim.
-- Clickable chord root/quality/inversion/duration editing, timeline zoom/scroll and chord MIDI export.
+- Five actual waveform lanes: Vocals, Drums, Bass, Other and independent Guitar; supported audio import, recording, gain, multi-solo, mute, balance, WAV export and background-prepared audio drag files. HTDemucs still separates exactly four sources.
+- Cancellable background key/chord/tuning analysis with eight detected chord qualities, confidence margins and timed labels. Synthetic tests: 96/96 held chords and 24/24 cadence keys; no recorded-song accuracy claim.
+- Advanced chord parser/editor (extensions, altered dominants, slash bass), seeded cinematic style rules, optional voice leading, timeline zoom/scroll and chord MIDI export.
 - Seeded harmony/scale-aware bass, GM drum and constrained melody generators; 4/8/16/32 bars, parameter editors, drum step editing and local phrase variation.
-- Selected-part audition, standard MIDI file export, external MIDI drag request, individual 24-bit WAV stems and audible audio mix export.
+- Guitar Studio: standard-tuning fret-constrained strums/picking, four variations, seeded humanization, background basic stereo plucked-string rendering, 44.1/48kHz PCM24 export. All five guitar types are basic synthesis profiles, not realistic samples.
+- Background tempo analysis, heuristic confidence, half/double alternatives, beat markers, Tap Tempo and explicit Apply. No default BPM is shown as a measured result.
+- Selected-part audition, 960-PPQ SMF export and held-gesture MIDI/audio file dragging with bounded retention and export fallbacks.
 - JUCE host BPM/PPQ/meter/transport/loop reading, sustained-note chase, note ownership, bypass and a fixed preview voice pool. Mock-host validation only.
-- Resizable vector GUI and compatible version-1 plugin state with optional pan/window, generated-note/settings, host-sync and inference-path properties. Audio remains embedded in state.
+- Resizable vector GUI and version-2 five-track state that reads legacy version-1 four-track sessions with optional pan/window, generated-note/settings, host-sync and inference-path properties. Audio remains embedded in state.
 
-![JASWINGMAN PRO Linux editor](Documentation/Screenshots/wingman-pro-linux.png)
+![JASWINGMAN PRO Linux editor](Documentation/Screenshots/jaswingman-v1-linux.png)
 
-Actual Linux integration render using synthesized WAV fixtures. This is not a macOS/Logic screenshot or evidence of AI-separated stems.
+Actual Linux integration render with test fixtures and synthesized Guitar audio; not a Mac/Logic screenshot or a photograph of isolated guitar.
+
+New documentation: [User guide](Documentation/JASWINGMAN-USER-GUIDE.md), [exact Mac M1 upgrade/build/install commands](Documentation/JASWINGMAN-MAC-M1.md), and [staged validation report](Documentation/JASWINGMAN-V1.md).
+
+Five workspaces preserve the original mixer/MIDI workflow and add Guitar Studio, Chords & Ideas, Tempo & Analysis, and Settings. Cinematic ideas use style rules; only the verified HTDemucs splitter uses a trained model.
 
 ## Model support: genuine CPU inference validated on Linux
 

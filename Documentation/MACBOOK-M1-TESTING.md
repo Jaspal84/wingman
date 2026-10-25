@@ -1,3 +1,5 @@
+Current renamed build: see [JASWINGMAN PRO user guide](JASWINGMAN-USER-GUIDE.md) and [Mac M1 runbook](JASWINGMAN-MAC-M1.md). Older artifact names below describe the earlier build.
+
 # MacBook Air M1 execution runbook
 
 **Status: instructions only. No AU/Logic/MainStage/M1 test has been executed by the Linux cloud agent.** Linux inference results are in INFERENCE-VALIDATION.md and cannot predict M1 timing, memory pressure or DAW behavior.

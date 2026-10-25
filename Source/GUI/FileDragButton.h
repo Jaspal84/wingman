@@ -8,7 +8,7 @@ class FileDragButton final : public juce::TextButton {
 public:
     std::function<juce::Result(juce::File&)> prepare;
     std::function<void(const juce::String&)> report;
-    FileDragButton(){setButtonText("Drag");setTooltip("Hold and drag to a DAW; use Export if unsupported");}
+    FileDragButton(){setColour(juce::TextButton::buttonColourId,juce::Colour{0xff236bc9});setButtonText("Drag");setTooltip("Hold and drag to a DAW; use Export if unsupported");}
     void mouseDown(const juce::MouseEvent& e) override {attempted=false;juce::TextButton::mouseDown(e);}
     void mouseDrag(const juce::MouseEvent& e) override {
         juce::TextButton::mouseDrag(e);

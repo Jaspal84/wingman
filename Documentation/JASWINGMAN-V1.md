@@ -53,3 +53,51 @@ passed (13.80s), including 16 advanced chord forms, malformed input rejection,
 slash bass voicing, template validity across styles/seeds, and readable extended
 voice-led MIDI with matched releases. The expanded chord editor includes slash
 bass and all supported qualities. No external AI chord model is downloaded.
+
+
+Stage 7: responsive five-workspace GUI, actual Guitar Studio controls and piano
+roll, cinematic editable ideas, measured-tempo/tap/apply controls, key/chord
+analysis and settings/About. Six main mixer/MIDI drag controls remain within all
+four tested window sizes. GUI callbacks generate actual guitar notes and 48k WAV
+audio, and apply real chord data. Waveforms use prepared stereo peak caches;
+analysis handles right-only stereo input. New renders cannot overwrite a Guitar
+lane changed during the job. Producer jobs are stopped before tempo consumers
+on teardown. Guitar note lifetimes terminate before a new pitch on the same
+string; ringing overlap remains across strings. Extended ninth-chord inversion
+bass/order and standalone preference migration have regression coverage.
+
+Final Linux VST3/standalone builds passed. Full regression: **13/13 suites**,
+**1035 integration checks**, 53.94s. JUCE-free portable build: **12/12**, 34.18s.
+Actual-model opt-in run: **13/13**, **1068 integration checks**, 86.12s. The latter
+was followed by regression reruns for screenshot-file truncation and per-string
+MIDI lifetimes; the AI worker/model integration did not change in those fixes.
+
+Real 20-second music/AIFF conversion: four finite, readable, distinct stereo
+44100Hz PCM24 WAVs, **882000 frames** each. Independent Guitar remained unchanged.
+Worker elapsed **44.9295s**, pure model **42.4208s**, peak worker RSS
+**1543168000 bytes**. Cancellation after a real chunk took **150.553ms**. Mixture
+reconstruction SNR **31.98dB**, not isolated-source SDR. Quiet vocals/bass warnings
+mean this fixture does not establish their semantic/perceptual quality. Raw model
+and input audio are not redistributed in Git. Benchmark, quality and acceptance
+summaries are in `Validation/jaswingman-v1-*.json`.
+
+The new GUI images in Screenshots are actual JUCE Linux renders using test audio,
+not native Mac screenshots. The four pre-existing colored lanes use synthetic
+fixtures; Guitar shows actual basic synthesized audio. No realistic sample
+library, trained chord generator, CoreML/ONNX acceleration, or guitar-isolating
+stem model has been added. Guitar profiles are explicitly basic synthesis and
+cinematic ideas are style rules.
+
+macOS AU build/auval, Logic/MainStage external drop acceptance, physical audio,
+M1 performance/thermals/RAM, sandbox permissions, security bookmark persistence,
+and native Retina/accessibility checks remain unexecuted. Session locking may
+skip blocks; legacy synchronous import/export and large embedded state operations
+remain limitations. Do not treat version 1.0 metadata as production acceptance.
+See JASWINGMAN-MAC-M1.md for exact local commands and acceptance checklist.
+
+Source groups changed: CMake/visible metadata and scripts; five-track processor,
+state and editor; AudioDragCache and waveform peaks; Music/GuitarRhythmGenerator,
+GuitarRenderer, GuitarState and CinematicIdeas; Analysis/TempoAnalysis; MIDI export
+and voice leading; GuitarStudio/Cinematic/Tempo/Settings GUI panels; automated
+music/audio/state/UI/AI tests; current docs and screenshots. Seven stable stage
+commits preserve the existing target, identifiers and model installation paths.

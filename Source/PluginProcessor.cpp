@@ -17,7 +17,11 @@ WingmanProcessor::WingmanProcessor()
     dragCleanupThread.start([](wingman::CancellationToken){wingman::DragFileStore::cleanupExpired(wingman::DragFileStore::root(),juce::Time::getCurrentTime());});
     setProgression(chordText);
 }
-WingmanProcessor::~WingmanProcessor() {cancelTempoAnalysis();tempoWorker.join(); cancelGuitar();guitarWorker.join(); modelJob.reset(); cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
+WingmanProcessor::~WingmanProcessor() {
+    // Stop producers before consumers: model/guitar completion can enqueue tempo work.
+    modelJob.reset();cancelGuitar();guitarWorker.join();cancelTempoAnalysis();tempoWorker.join();
+    cancelAnalysis();if(analysisThread.joinable())analysisThread.join();
+}
 void WingmanProcessor::cancelAnalysis() { analysisThread.request_stop(); }
 juce::String WingmanProcessor::analysisMessage() const { const juce::ScopedLock lock(mutex); return analysisStatus; }
 wingman::HarmonicResult WingmanProcessor::analysisSnapshot() const { const juce::ScopedLock lock(mutex); return analysis; }
@@ -197,25 +201,25 @@ void WingmanProcessor::setTrackPan(int i, float pan) {
 juce::String WingmanProcessor::sessionName()const{const juce::ScopedLock lock(mutex);return projectTitle;}
 void WingmanProcessor::setSessionName(const juce::String& value){const juce::ScopedLock lock(mutex);projectTitle=value.trim().substring(0,120);}
 void WingmanProcessor::setEditorSize(int width, int height) {
-    const juce::ScopedLock lock(mutex); editorWidth = juce::jlimit(960,1920,width); editorHeight = juce::jlimit(608,1216,height);
+    const juce::ScopedLock lock(mutex); editorWidth = juce::jlimit(960,1920,width); editorHeight = juce::jlimit(608,1318,height);
 }
 std::pair<int,int> WingmanProcessor::editorSize() const { const juce::ScopedLock lock(mutex); return {editorWidth,editorHeight}; }
 juce::Result WingmanProcessor::importWav(int i, const juce::File& file) {
     if (!validTrack(i)) return juce::Result::fail("Invalid track");
-    juce::WavAudioFormat format;
-    auto stream = file.createInputStream();
-    if (!stream) return juce::Result::fail("Cannot open WAV file");
-    std::unique_ptr<juce::AudioFormatReader> reader(format.createReaderFor(stream.release(), true));
-    if (!reader) return juce::Result::fail("Cannot read WAV file");
+    if(!file.existsAsFile())return juce::Result::fail("Cannot open audio file");
+    juce::AudioFormatManager formats;formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    if(!reader)return juce::Result::fail("Unsupported or unreadable audio file");
     if (reader->sampleRate < 8000 || reader->sampleRate > 192000 || reader->lengthInSamples <= 0
-        || reader->lengthInSamples > reader->sampleRate * maxClipSeconds || reader->numChannels < 1)
-        return juce::Result::fail("WAV must be 8-192 kHz and at most 120 seconds");
+        || reader->lengthInSamples > reader->sampleRate * maxClipSeconds || reader->numChannels < 1 || reader->numChannels > 2)
+        return juce::Result::fail("Audio must be mono/stereo, 8-192 kHz and at most 120 seconds");
     auto clip = std::make_shared<wingman::Clip>();
     clip->sampleRate = reader->sampleRate; clip->name = file.getFileName();
     clip->audio.setSize(2, static_cast<int>(reader->lengthInSamples));
-    if (!reader->read(&clip->audio, 0, clip->audio.getNumSamples(), 0, true, true)) return juce::Result::fail("WAV decoding failed");
+    if (!reader->read(&clip->audio, 0, clip->audio.getNumSamples(), 0, true, true)) return juce::Result::fail("Audio decoding failed");
     for (int ch = 0; ch < 2; ++ch) for (int sample = 0; sample < clip->audio.getNumSamples(); ++sample)
-        if (!std::isfinite(clip->audio.getSample(ch,sample))) return juce::Result::fail("WAV contains nonfinite samples");
+        if (!std::isfinite(clip->audio.getSample(ch,sample))) return juce::Result::fail("Audio contains nonfinite samples");
+    clip->buildWaveform();
     const juce::ScopedLock lock(mutex);
     tracks[static_cast<std::size_t>(i)].clip = std::move(clip);
     ++audioRevision; analysis={};
@@ -249,7 +253,7 @@ void WingmanProcessor::rebuildMidi() {
 }
 void WingmanProcessor::selectPart(int part) { const juce::ScopedLock lock(mutex); activePart = juce::jlimit(-1,3,part); generated = activePart < 0 || (activePart==3?!guitarNotes.empty():!parts[static_cast<std::size_t>(activePart)].empty()); rebuildMidi(); }
 int WingmanProcessor::selectedPart() const { const juce::ScopedLock lock(mutex); return activePart; }
-wingman::PatternSettings WingmanProcessor::partSettings(int part) const { const juce::ScopedLock lock(mutex); return part >= 0 && part < 3 ? settings[static_cast<std::size_t>(part)] : wingman::PatternSettings{}; }
+wingman::PatternSettings WingmanProcessor::partSettings(int part) const { const juce::ScopedLock lock(mutex); if(part==3){wingman::PatternSettings s;s.bars=guitarSettings.bars;s.lowest=40;s.highest=88;return s;}return part >= 0 && part < 3 ? settings[static_cast<std::size_t>(part)] : wingman::PatternSettings{}; }
 std::vector<wingman::NoteEvent> WingmanProcessor::partNotes(int part) const { const juce::ScopedLock lock(mutex); return part==3?guitarNotes:part >= 0 && part < 3 ? parts[static_cast<std::size_t>(part)] : std::vector<wingman::NoteEvent>{}; }
 juce::Result WingmanProcessor::generatePart(int part,const wingman::PatternSettings& config) {
     if (part < 0 || part > 2) return juce::Result::fail("Invalid part");
@@ -320,6 +324,7 @@ juce::Result WingmanProcessor::finishRecording() {
     clip->audio.setSize(2, recordSamples);
     for (int ch = 0; ch < 2; ++ch) clip->audio.copyFrom(ch,0,recordBuffer,ch,0,recordSamples);
     clip->sampleRate = engineRate; clip->name = "Recorded input";
+    clip->buildWaveform();
     tracks[static_cast<std::size_t>(recordTrack)].clip = std::move(clip);
     ++audioRevision; analysis={};startTempoAnalysis(recordTrack);
     return juce::Result::ok();
@@ -419,7 +424,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
                 std::memcpy(clip->audio.getWritePointer(ch), bytes->getData(), bytes->getSize());
                 for (int s = 0; s < n; ++s) if (!std::isfinite(clip->audio.getSample(ch,s))) return;
             }
-            t.clip = std::move(clip);
+            clip->buildWaveform();t.clip = std::move(clip);
         }
     }
     const double restoredBpm = state["bpm"];
@@ -481,7 +486,7 @@ juce::Result WingmanProcessor::importStemSet(const std::array<juce::File,4>& fil
         auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=reader->sampleRate;clip->name=files[static_cast<std::size_t>(i)].getFileName();clip->audio.setSize(2,static_cast<int>(reader->lengthInSamples));
         if(!reader->read(&clip->audio,0,clip->audio.getNumSamples(),0,true,true))return juce::Result::fail("Cannot decode separated stem");
         for(int ch=0;ch<2;++ch)for(int s=0;s<clip->audio.getNumSamples();++s)if(!std::isfinite(clip->audio.getSample(ch,s)))return juce::Result::fail("Nonfinite separated stem");
-        loaded[static_cast<std::size_t>(i)]=std::move(clip);
+        clip->buildWaveform();loaded[static_cast<std::size_t>(i)]=std::move(clip);
     }
     const juce::ScopedLock lock(mutex);for(int i=0;i<4;++i)tracks[static_cast<std::size_t>(i)].clip.swap(loaded[static_cast<std::size_t>(i)]);
     seconds=0;panic=true;++audioRevision;analysis={};startTempoAnalysis(3);return juce::Result::ok();
@@ -498,20 +503,20 @@ wingman::ModelJobInfo WingmanProcessor::guitarStatus()const{const juce::ScopedLo
 void WingmanProcessor::cancelGuitar(){guitarWorker.request_stop();}
 juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config,bool renderAudio,double sampleRate){
     if(guitarBusy.exchange(true))return juce::Result::fail("Guitar generation is already running");
-    std::vector<wingman::Chord> harmony;int keyCopy;double tempoCopy;juce::String text;
-    {const juce::ScopedLock lock(mutex);tempoCopy=bpm;harmony=chords;keyCopy=transpose;text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
-    guitarWorker.start([this,config,harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy](wingman::CancellationToken token){
+    std::vector<wingman::Chord> harmony;int keyCopy;double tempoCopy;juce::String text;std::shared_ptr<const wingman::Clip> originalGuitar;
+    {const juce::ScopedLock lock(mutex);tempoCopy=bpm;originalGuitar=tracks[4].clip;harmony=chords;keyCopy=transpose;text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
+    guitarWorker.start([this,config,harmony,keyCopy,text,renderAudio,sampleRate,tempoCopy,originalGuitar](wingman::CancellationToken token){
         try{auto notes=wingman::generateGuitar(harmony,keyCopy,config,[&]{return !token.stop_requested();});
             std::shared_ptr<const wingman::Clip> rendered;
             if(renderAudio){
                 {const juce::ScopedLock lock(mutex);guitarMessage="Rendering basic plucked-string synthesis...";}
                 const auto audio=wingman::renderGuitar(notes,config,tempoCopy,sampleRate,[&](double p){guitarProgress=0.1+p*0.85;return !token.stop_requested();});
                 auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=sampleRate;clip->name="Basic synthesized guitar";clip->audio.setSize(2,static_cast<int>(audio.channels[0].size()));
-                for(int ch=0;ch<2;++ch)clip->audio.copyFrom(ch,0,audio.channels[static_cast<std::size_t>(ch)].data(),clip->audio.getNumSamples());rendered=clip;
+                for(int ch=0;ch<2;++ch)clip->audio.copyFrom(ch,0,audio.channels[static_cast<std::size_t>(ch)].data(),clip->audio.getNumSamples());clip->buildWaveform();rendered=clip;
             }
             if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");
             const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");if(text!=chordText||keyCopy!=transpose)throw std::runtime_error("Harmony changed; regenerate guitar");
-            if(renderAudio){if(bpm!=tempoCopy)throw std::runtime_error("Tempo changed; render guitar again");tracks[4].clip.swap(rendered);++audioRevision;startTempoAnalysis(4);}
+            if(renderAudio){if(tracks[4].clip!=originalGuitar)throw std::runtime_error("Guitar lane changed; render again");if(bpm!=tempoCopy)throw std::runtime_error("Tempo changed; render guitar again");tracks[4].clip.swap(rendered);++audioRevision;startTempoAnalysis(4);}
             guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage=renderAudio?"Guitar WAV rendered with basic synthesis (not sampled realism)":"Guitar MIDI generated; audio requires Render WAV";
         }catch(const std::exception& ex){const juce::ScopedLock lock(mutex);guitarMessage=ex.what();}guitarBusy=false;
     });return juce::Result::ok();
@@ -535,7 +540,7 @@ juce::Result WingmanProcessor::startTempoAnalysis(int track){
             {const juce::ScopedLock lock(tempoControlMutex);if(token.stop_requested()){pendingTempo=-1;tempoBusy=false;break;}lane=pendingTempo;pendingTempo=-1;if(lane<0){tempoBusy=false;break;}}
             const auto clip=trackSnapshot(lane).clip;if(!clip)continue;
             {const juce::ScopedLock lock(mutex);tempoResult={};tempoClip=clip;tempoTrack=lane;tempoMessage="Analyzing onsets and pulse...";}tempoProgress=0;
-            try{auto result=wingman::analyseTempo(clip->audio.getReadPointer(0),clip->audio.getNumSamples(),clip->sampleRate,[&](double p){tempoProgress=p;return !token.stop_requested();});
+            try{auto result=wingman::analyseTempo(clip->audio.getReadPointer(0),clip->audio.getNumSamples(),clip->sampleRate,[&](double p){tempoProgress=p;return !token.stop_requested();},clip->audio.getReadPointer(1));
                 const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Tempo analysis cancelled");
                 if(tracks[static_cast<std::size_t>(lane)].clip==clip){tempoResult=std::move(result);tempoProgress=1;tempoMessage=tempoResult.valid?"Tempo measured from audio. Apply explicitly; half/double ambiguity remains.":"No reliable pulse found; use rhythmic audio longer than three seconds";}
             }catch(const std::exception& ex){const juce::ScopedLock lock(mutex);tempoResult={};tempoMessage=ex.what();}

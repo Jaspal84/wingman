@@ -1,6 +1,10 @@
 #include "PluginEditor.h"
 #include "GUI/GeneratorPanel.h"
 #include "GUI/ModelPanel.h"
+#include "GUI/GuitarStudioPanel.h"
+#include "GUI/CinematicPanel.h"
+#include "GUI/TempoPanel.h"
+#include "GUI/SettingsPanel.h"
 #include "Files/DragFileStore.h"
 namespace {
 const std::array<juce::String,5> names{"Vocals", "Other", "Bass", "Drums", "Guitar"};
@@ -69,6 +73,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     bpm.setTextBoxStyle(juce::Slider::TextBoxLeft,false,65,28);
     bpm.onValueChange = [this] { processor.setTempo(bpm.getValue()); };
     record.setColour(juce::TextButton::buttonOnColourId,juce::Colour{0xffa43848});
+    playButton.setColour(juce::TextButton::buttonColourId,juce::Colour{0xff0b766a});
     playButton.setColour(juce::TextButton::buttonOnColourId,juce::Colour{0xff237d60});
     record.onClick = [this] {
         if (processor.isRecording()) showResult(processor.finishRecording(),"Recording captured (maximum 120 seconds)");
@@ -83,7 +88,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     for (int i = 0; i < 5; ++i) {
         const auto n = static_cast<std::size_t>(i);
         for (auto* c : std::initializer_list<juce::Component*>{&imports[n],&solos[n],&mutes[n],&volumes[n],&pans[n],&stemExports[n]}) addAndMakeVisible(c);
-        imports[n].setButtonText("Import WAV"); imports[n].onClick = [this,i] { importTrack(i); };
+        imports[n].setButtonText("Import Audio"); imports[n].onClick = [this,i] { importTrack(i); };
         solos[n].setButtonText("S"); mutes[n].setButtonText("M");
         solos[n].setClickingTogglesState(true); mutes[n].setClickingTogglesState(true);
         solos[n].setTooltip("Solo this track (multiple solos allowed)"); mutes[n].setTooltip("Mute this track");
@@ -144,7 +149,14 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     };
     status.setColour(juce::Label::textColourId,juce::Colour{0xffc4cadb});
     status.setText("Import WAVs or record input. Edit a progression, then Generate MIDI.",juce::dontSendNotification);
-    resized(); refresh(); startTimerHz(20);
+    const juce::StringArray tabs{"Stems & Tracks","Guitar Studio","Chords & Ideas","Tempo & Analysis","Settings"};
+    for(int i=0;i<5;++i){addAndMakeVisible(viewTabs[static_cast<std::size_t>(i)]);viewTabs[static_cast<std::size_t>(i)].setButtonText(tabs[i]);viewTabs[static_cast<std::size_t>(i)].onClick=[this,i]{selectView(i);};}
+    guitarPanel=std::make_unique<wingman::GuitarStudioPanel>(processor);cinematicPanel=std::make_unique<wingman::CinematicPanel>(processor);tempoPanel=std::make_unique<wingman::TempoPanel>(processor);
+    settingsPanel=std::make_unique<wingman::SettingsPanel>(processor,[safe=juce::Component::SafePointer<WingmanEditor>(this)]{if(safe&&safe->models.onClick)safe->models.onClick();});
+    for(auto* c:std::initializer_list<juce::Component*>{guitarPanel.get(),cinematicPanel.get(),tempoPanel.get(),settingsPanel.get()})addAndMakeVisible(c);
+    resized();
+    for(auto* child:getChildren())if(child->getY()>=124 && child!=guitarPanel.get()&&child!=cinematicPanel.get()&&child!=tempoPanel.get()&&child!=settingsPanel.get())mainContent.push_back(child);
+    selectView(0);refresh(); startTimerHz(20);
 }
 WingmanEditor::~WingmanEditor() { stopTimer(); setLookAndFeel(nullptr); }
 void WingmanEditor::updateMix(int i) {
@@ -155,7 +167,7 @@ void WingmanEditor::showResult(const juce::Result& result, const juce::String& s
     status.setText(result.wasOk() ? success : result.getErrorMessage(),juce::dontSendNotification);
 }
 void WingmanEditor::importTrack(int i) {
-    chooser = std::make_unique<juce::FileChooser>("Import WAV into " + names[static_cast<std::size_t>(i)],juce::File{},"*.wav");
+    chooser = std::make_unique<juce::FileChooser>("Import audio into " + names[static_cast<std::size_t>(i)],juce::File{},"*.wav;*.aif;*.aiff;*.flac;*.mp3;*.m4a");
     chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [safe = juce::Component::SafePointer<WingmanEditor>(this),i](const juce::FileChooser& fc) {
             if (!safe || fc.getResult() == juce::File{}) return;
@@ -168,7 +180,7 @@ void WingmanEditor::importTrack(int i) {
 void WingmanEditor::chooseExport(bool midi, int track) {
     const auto extension = midi ? ".mid" : ".wav";
     chooser = std::make_unique<juce::FileChooser>(midi ? "Export standard MIDI file" : "Export WAV audio",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("Wingman" + juce::String(extension)), "*" + juce::String(extension));
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("JASWINGMAN" + juce::String(extension)), "*" + juce::String(extension));
     chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
         [safe = juce::Component::SafePointer<WingmanEditor>(this),midi,track,extension](const juce::FileChooser& fc) {
             if (!safe || fc.getResult() == juce::File{}) return;
@@ -177,6 +189,7 @@ void WingmanEditor::chooseExport(bool midi, int track) {
         });
 }
 void WingmanEditor::refresh() {
+    if(!projectTitle.hasKeyboardFocus(true)&&projectTitle.getText()!=processor.sessionName())projectTitle.setText(processor.sessionName());
     cancel.setEnabled(processor.analysisIsRunning());
     partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
     midiBar.setEnabled(processor.selectedPart()==1);
@@ -240,70 +253,60 @@ void WingmanEditor::rebuildWaveform(int i) {
         if (begin >= total) break;
         int end = std::max(begin+1,static_cast<int>(static_cast<double>(x+1)*duration*clip.sampleRate/width));
         end = std::min(total,end); float peak = 0;
-        for (int s = begin; s < end; ++s) peak = std::max(peak,std::abs(samples[s]));
+        if(!clip.peaks.empty()){
+            for(int bin=begin/wingman::Clip::peakHop;bin<(end+wingman::Clip::peakHop-1)/wingman::Clip::peakHop&&bin<static_cast<int>(clip.peaks.size());++bin)peak=std::max(peak,clip.peaks[static_cast<std::size_t>(bin)]);
+        }else{
+            const int stride=std::max(1,(end-begin)/64);for(int sample=begin;sample<end;sample+=stride)peak=std::max(peak,std::abs(samples[sample]));
+        }
         const float height = std::min(1.0f,peak)*bounds.getHeight()*0.42f;
         path.startNewSubPath(bounds.getX()+x,bounds.getCentreY()-height);
         path.lineTo(bounds.getX()+x,bounds.getCentreY()+std::max(0.7f,height));
     }
 }
 void WingmanEditor::resized() {
-    uiScale = std::min(getWidth()/1200.0f,getHeight()/908.0f);
+    uiScale=std::min(getWidth()/1200.0f,getHeight()/840.0f);
     processor.setEditorSize(getWidth(),getHeight());
-    projectTitle.setBounds(28,55,174,18);
-    models.setBounds(942,24,222,34); sync.setBounds(870,24,68,34);
-    record.setBounds(206,24,142,34); recordTarget.setBounds(354,24,118,34);
-    keyBox.setBounds(493,27,72,30); bpm.setBounds(581,27,120,30);
-    playButton.setBounds(719,24,68,34); stopButton.setBounds(795,24,68,34);
-    for (int i = 0; i < 5; ++i) {
-        const auto n = static_cast<std::size_t>(i); const std::array<int,5> row{0,3,2,1,4}; const int y = 131+row[n]*84;
-        imports[n].setBounds(28,y+32,100,24); solos[n].setBounds(142,y+14,32,28);
-        mutes[n].setBounds(180,y+14,32,28); pans[n].setBounds(142,y+47,125,18); volumes[n].setBounds(218,y+4,47,47);
-        waveformBounds[n] = {282,y+4,598,59}; stemExports[n].setBounds(912,y+19,186,31); stemDrags[n].setBounds(1104,y+19,60,31); rebuildWaveform(i);
+    projectTitle.setBounds(28,55,174,18);models.setBounds(942,24,222,34);sync.setBounds(870,24,68,34);
+    record.setBounds(206,24,142,34);recordTarget.setBounds(354,24,118,34);keyBox.setBounds(493,27,72,30);bpm.setBounds(581,27,120,30);playButton.setBounds(719,24,68,34);stopButton.setBounds(795,24,68,34);
+    for(int i=0;i<5;++i)viewTabs[static_cast<std::size_t>(i)].setBounds(12+i*236,86,230,32);
+    splitChoose.setBounds(28,132,260,30);splitStart.setBounds(300,132,150,30);splitCancel.setBounds(462,132,100,30);splitProgressBar.setBounds(584,132,580,30);splitStatus.setBounds(28,165,1136,24);
+    const std::array<int,5> rows{0,3,2,1,4};
+    for(int i=0;i<5;++i){const auto n=static_cast<std::size_t>(i);const int y=230+rows[n]*66;
+        imports[n].setBounds(28,y+27,100,22);solos[n].setBounds(142,y+8,32,25);mutes[n].setBounds(180,y+8,32,25);pans[n].setBounds(142,y+40,125,15);volumes[n].setBounds(218,y-1,47,47);
+        waveformBounds[n]={282,y,598,55};stemExports[n].setBounds(912,y+12,186,31);stemDrags[n].setBounds(1104,y+12,60,31);
     }
-    ideas.setBounds(124,499,240,32); chordInput.setBounds(28,552,594,34); apply.setBounds(638,552,126,34);
-    detect.setBounds(382,499,190,32); cancel.setBounds(584,499,180,32);
-    chordBounds = {28,602,852,92}; midiBounds = {914,557,248,64};
-    midiBar.setBounds(914,623,248,18);
-    partChoice.setBounds(912,533,252,25); dragMidi.setBounds(1090,680,74,28);
-    generate.setButtonText("Generate selected part");
-    generate.setBounds(912,644,252,32); preview.setBounds(912,680,160,28);
-    exportMidi.setBounds(1044,499,120,32); exportMix.setBounds(912,455,252,30);
-    timelineZoom.setBounds(768,548,112,18); timelineScroll.setBounds(768,574,112,18);
-    status.setBounds(24,720,1152,28);
-    for(auto* child:getChildren())if(child->getY()>=499 || child==&exportMix)child->setTopLeftPosition(child->getX(),child->getY()+84);
-    chordBounds.translate(0,84);midiBounds.translate(0,84);
-    // Reserve an independent splitter row without removing existing controls.
-    for(auto* child:getChildren())if(child->getY()>=90 && child!=&splitChoose && child!=&splitStart && child!=&splitCancel && child!=&splitStatus && child!=&splitProgressBar)
-        child->setTopLeftPosition(child->getX(),child->getY()+64);
-    for(auto& bounds:waveformBounds)bounds.translate(0,64);
-    chordBounds.translate(0,64);midiBounds.translate(0,64);
-    splitChoose.setBounds(28,88,260,30);splitStart.setBounds(300,88,150,30);splitCancel.setBounds(462,88,100,30);splitProgressBar.setBounds(584,88,580,30);splitStatus.setBounds(28,121,1136,24);
+    exportMix.setBounds(912,558,252,30);ideas.setBounds(124,606,240,30);detect.setBounds(382,606,190,30);cancel.setBounds(584,606,180,30);exportMidi.setBounds(1044,606,120,30);
+    chordInput.setBounds(28,660,594,32);apply.setBounds(638,660,126,32);timelineZoom.setBounds(768,656,112,18);timelineScroll.setBounds(768,682,112,18);
+    chordBounds={28,706,852,90};partChoice.setBounds(912,640,252,25);midiBounds={914,668,248,58};midiBar.setBounds(914,728,248,18);
+    generate.setButtonText("Generate selected part");generate.setBounds(912,750,252,28);preview.setBounds(912,782,160,24);dragMidi.setBounds(1090,782,74,24);status.setBounds(24,812,1152,24);
+    for(auto* c:std::initializer_list<juce::Component*>{guitarPanel.get(),cinematicPanel.get(),tempoPanel.get(),settingsPanel.get()})if(c)c->setBounds(12,128,1176,680);
     for(int i=0;i<5;++i)rebuildWaveform(i);
-    for (auto* child : getChildren()) child->setTransform(juce::AffineTransform::scale(uiScale));
+    for(auto* child:getChildren())child->setTransform(juce::AffineTransform::scale(uiScale));
 }
 void WingmanEditor::paint(juce::Graphics& g) {
     g.fillAll(wingman::background);
     g.addTransform(juce::AffineTransform::scale(uiScale));
     g.setColour(wingman::panel); g.fillRoundedRectangle(12,12,1176,65,12);
-    g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(17.0f,juce::Font::bold)); g.drawText("JASWINGMAN PRO",28,26,174,29,juce::Justification::centredLeft);
+    g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(18.0f,juce::Font::bold)); g.drawText("JASWINGMAN",28,26,128,29,juce::Justification::centredLeft);g.setColour(wingman::accent);g.drawText("PRO",157,26,45,29,juce::Justification::centredLeft);
     g.setFont(juce::FontOptions(11.0f)); g.setColour(juce::Colours::lightgrey);
-    const bool processing=processor.analysisIsRunning()||processor.modelJobStatus().running;
+    const bool processing=processor.analysisIsRunning()||processor.modelJobStatus().running||processor.guitarStatus().running||processor.tempoAnalysisStatus().running;
     g.setColour(processing?wingman::accent:juce::Colours::grey);g.fillEllipse(1040,64,5,5);
     g.drawText(processing?"Processing":"Idle",1050,59,110,16,juce::Justification::centredLeft);
     g.setColour(juce::Colours::lightgrey);
     g.drawText("KEY",493,11,72,15,juce::Justification::centredLeft); g.drawText("BPM",581,11,70,15,juce::Justification::centredLeft);
 
-    g.setColour(wingman::panel); g.fillRoundedRectangle(12,80,1176,70,10); g.fillRoundedRectangle(12,156,1176,483,14); g.fillRoundedRectangle(12,641,1176,216,14);
+    if(activeView!=0)return;
+    g.setColour(wingman::panel); g.fillRoundedRectangle(12,124,1176,70,10); g.fillRoundedRectangle(12,200,1176,392,14); g.fillRoundedRectangle(12,600,1176,210,14);
     g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(15.0f,juce::Font::bold));
-    g.drawText("INPUT TRACKS (5)",28,165,210,23,juce::Justification::centredLeft);
-    g.drawText("EXPORT STEMS",912,165,252,23,juce::Justification::centredLeft);
-    g.drawText("IDEAS",28,647,90,32,juce::Justification::centredLeft);
+    g.drawText("INPUT TRACKS (5)",28,207,210,23,juce::Justification::centredLeft);
+    g.drawText("EXPORT STEMS",912,207,252,23,juce::Justification::centredLeft);
+    g.drawText("IDEAS",28,606,90,32,juce::Justification::centredLeft);
 
     double duration = 1;
     for (const auto& clip : cachedClips) if (clip) duration = std::max(duration,clip->audio.getNumSamples()/clip->sampleRate);
     g.setColour(juce::Colours::lightgrey); g.setFont(juce::FontOptions(11.0f));
     for (int division = 0; division < 8; ++division)
-        g.drawText(juce::String(duration*division/8.0,1) + " s",282+division*598/8,168,65,18,juce::Justification::centredLeft);
+        g.drawText(juce::String(duration*division/8.0,1) + " s",282+division*598/8,211,65,18,juce::Justification::centredLeft);
     for (int i = 0; i < 5; ++i) {
         const auto n = static_cast<std::size_t>(i); const auto bounds = waveformBounds[n];
         g.setColour(wingman::trackColours[n]); g.setFont(juce::FontOptions(16.0f,juce::Font::bold));
@@ -325,12 +328,12 @@ void WingmanEditor::paint(juce::Graphics& g) {
     for (const auto& region : harmony.regions) {
         const auto x = 282.0f+static_cast<float>(region.start/duration*598);
         const auto width = static_cast<float>((region.end-region.start)/duration*598);
-        g.setColour(wingman::accent.withAlpha(0.25f)); g.fillRect(x,186.0f,width,12.0f);
+        g.setColour(wingman::accent.withAlpha(0.25f)); g.fillRect(x,217.0f,width,12.0f);
         g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(10.0f));
-        g.drawText(juce::String(wingman::chordName(region.chord)),static_cast<int>(x),185,static_cast<int>(width),13,juce::Justification::centredLeft);
+        g.drawText(juce::String(wingman::chordName(region.chord)),static_cast<int>(x),216,static_cast<int>(width),13,juce::Justification::centredLeft);
     }
     g.setColour(juce::Colours::lightgrey); g.setFont(juce::FontOptions(12.0f));
-    g.drawText("CHORDS | suffix ^inversion:beats | MIDI loops while playing",28,680,800,18,juce::Justification::centredLeft);
+    g.drawText("CHORDS | suffix ^inversion:beats | MIDI loops while playing",28,640,800,18,juce::Justification::centredLeft);
     g.setColour(juce::Colour{0xff101219}); g.fillRoundedRectangle(chordBounds.toFloat(),6); g.fillRoundedRectangle(midiBounds.toFloat(),6);
     auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
     if (!tokens.isEmpty()) {
@@ -463,4 +466,15 @@ void WingmanEditor::filesDropped(const juce::StringArray& files,int,int){
 void WingmanEditor::startSplit(const juce::File& input){
     const auto result=processor.startModelJob("separate",input);
     splitStatus.setText(result.wasOk()?"Starting separation...":result.getErrorMessage(),juce::dontSendNotification);
+}
+
+void WingmanEditor::selectView(int view){
+    activeView=juce::jlimit(0,4,view);
+    for(auto* child:mainContent)child->setVisible(activeView==0);
+    if(guitarPanel){guitarPanel->setVisible(activeView==1);if(activeView==1)guitarPanel->reloadSettings();}
+    if(cinematicPanel)cinematicPanel->setVisible(activeView==2);
+    if(tempoPanel)tempoPanel->setVisible(activeView==3);
+    if(settingsPanel){settingsPanel->setVisible(activeView==4);if(activeView==4)settingsPanel->refresh();}
+    for(int i=0;i<5;++i)viewTabs[static_cast<std::size_t>(i)].setToggleState(i==activeView,juce::dontSendNotification);
+    repaint();
 }

@@ -11,6 +11,7 @@ endif()
 find_package(Threads REQUIRED)
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+  add_test(NAME standalone_migration COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Tests/test_standalone_migration.py)
   add_test(NAME au_metadata COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Tests/test_au_metadata.py)
   add_test(NAME model_worker COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Tests/test_stem_worker.py)
 endif()
@@ -66,7 +67,7 @@ if(WINGMAN_BUILD_PLUGIN)
     PLUGIN_MANUFACTURER_CODE Wgma PLUGIN_CODE Wgm1 FORMATS ${WINGMAN_FORMATS}
     PRODUCT_NAME "JASWINGMAN PRO" AU_MAIN_TYPE kAudioUnitType_MusicEffect IS_SYNTH FALSE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE COPY_PLUGIN_AFTER_BUILD FALSE
-    MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Record audio into Wingman tracks."
+    MICROPHONE_PERMISSION_ENABLED TRUE MICROPHONE_PERMISSION_TEXT "Record audio into JASWINGMAN PRO tracks."
     VST3_CATEGORIES Fx Instrument)
   juce_add_binary_data(WingmanWorker NAMESPACE WingmanWorkerData HEADER_NAME WingmanWorkerData.h SOURCES Scripts/stem_worker.py)
   target_link_libraries(Wingman PRIVATE WingmanWorker)

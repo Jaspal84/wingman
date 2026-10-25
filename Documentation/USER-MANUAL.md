@@ -1,3 +1,5 @@
+Current renamed build: see [JASWINGMAN PRO user guide](JASWINGMAN-USER-GUIDE.md) and [Mac M1 runbook](JASWINGMAN-MAC-M1.md). Older artifact names below describe the earlier build.
+
 # Wingman Pro development manual
 
 This is a tested Linux audio/MIDI development build, not a validated macOS production release.

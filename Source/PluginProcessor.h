@@ -111,7 +111,7 @@ private:
     std::array<wingman::Track,5> tracks;
     wingman::AudioDragCache audioDragCache;
     double engineRate = 44100, bpm = 120, seconds = 0;
-    int transpose = 0, editorWidth = 1200, editorHeight = 760;
+    int transpose = 0, editorWidth = 1200, editorHeight = 840;
     bool voiceLeading=false;
     bool playing = false, recording = false, previewEnabled = true, generated = false, panic = false;
     std::vector<wingman::Chord> chords;

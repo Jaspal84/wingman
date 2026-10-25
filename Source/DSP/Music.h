@@ -46,8 +46,10 @@ struct Chord {
             case ChordQuality::Minor6: intervals = {0,3,7,9}; break;
         }
         for (auto& note : intervals) note += 48+root+transpose;
-        for (int i = 0; i < inversion && i < static_cast<int>(intervals.size()); ++i) {
-            const int first = intervals.front()+12; intervals.erase(intervals.begin()); intervals.push_back(first);
+        if(inversion>0&&inversion<static_cast<int>(intervals.size())){
+            const int lowest=intervals[static_cast<std::size_t>(inversion)];
+            for(auto& note:intervals)while(note<lowest)note+=12;
+            std::sort(intervals.begin(),intervals.end());
         }
         if(bass>=0){
             const int bottom=36+(bass+transpose+120)%12;

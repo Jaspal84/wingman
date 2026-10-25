@@ -1,6 +1,10 @@
 #include "PluginProcessor.h"
 #include "GUI/GeneratorPanel.h"
 #include "GUI/ModelPanel.h"
+#include "GUI/GuitarStudioPanel.h"
+#include "GUI/CinematicPanel.h"
+#include "GUI/TempoPanel.h"
+#include "GUI/SettingsPanel.h"
 #include "GUI/FileDragButton.h"
 #include "Files/DragFileStore.h"
 #include <iostream>
@@ -45,8 +49,11 @@ int main() {
          check(decoded&&decoded->sampleRate==48000&&decoded->numChannels==2&&decoded->bitsPerSample==24&&decoded->lengthInSamples==4800,"background drag WAV is readable aligned stereo PCM24");}
 
         check(p.importWav(1,directory.getChildFile("missing.wav")).failed(),"reject missing file");
+        {const auto aiff=directory.getChildFile("portable-import.aiff");{juce::AiffAudioFormat format;std::unique_ptr<juce::AudioFormatWriter> writer(format.createWriterFor(new juce::FileOutputStream(aiff),48000,2,24,{},0));check(writer&&writer->writeFromAudioSampleBuffer(input,0,4800),"create AIFF import fixture");}WingmanProcessor codecs;check(codecs.importWav(0,aiff).wasOk()&&codecs.trackSnapshot(0).clip->audio.getNumSamples()==4800,"input lanes decode supported non-WAV audio too");}
+
         check(p.importWav(9,source).failed(),"reject invalid track");
         auto clip = p.trackSnapshot(0).clip;
+        check(!clip->peaks.empty()&&std::abs(clip->peaks.front()-0.25f)<0.000001f,"waveform peak cache prepared with clip");
         check(clip && clip->audio.getNumSamples() == 4800,"decoded WAV samples");
         juce::AudioBuffer<float> block(2,512); juce::MidiBuffer midi;
         p.play(); block.clear(); p.processBlock(block,midi);
@@ -242,6 +249,7 @@ int main() {
             const auto* runtime=std::getenv("WINGMAN_REAL_PYTHON");const auto* inputPath=std::getenv("WINGMAN_REAL_INPUT");
             check(runtime&&inputPath,"real inference requires runtime and input environment selectors");
             WingmanProcessor real;real.prepareToPlay(44100,512);real.configureModel(runtime,modelsPath);
+            check(real.importWav(4,juce::File(inputPath)).wasOk(),"seed independent Guitar lane before four-stem separation");const auto independentGuitar=real.trackSnapshot(4).clip;
             const auto convertedInput=directory.getChildFile("real-input.aiff");
             { juce::AudioFormatManager formats;formats.registerBasicFormats();
               std::unique_ptr<juce::AudioFormatReader> original(formats.createReaderFor(juce::File(inputPath)));
@@ -251,6 +259,7 @@ int main() {
               check(writer&&writer->writeFromAudioReader(*original,0,original->lengthInSamples),"create real AIFF fixture"); }
             check(real.startModelJob("separate",convertedInput).wasOk(),"decode AIFF and run actual model through embedded plugin worker");
             for(int wait=0;wait<3000&&real.modelJobStatus().running;++wait)juce::Thread::sleep(100);
+            check(real.trackSnapshot(4).clip==independentGuitar,"HTDemucs preserves independent Guitar lane");
             const auto done=real.modelJobStatus();
             check(done.outputDirectory.isDirectory(),"validated raw stems retained for delayed host file import");std::cout<<"Real model job: "<<done.message<<"\n";
             check(!done.running&&done.progress==1&&done.message.contains("Four stems imported"),"actual model inference imports four stems");
@@ -321,13 +330,13 @@ int main() {
         const auto guitarNotes=p.partNotes(3);const auto guitarMidi=directory.getChildFile("guitar.mid");check(p.exportMidi(guitarMidi).wasOk(),"export guitar SMF");
         {juce::MidiFile file;auto stream=guitarMidi.createInputStream();check(stream&&file.readFrom(*stream)&&file.getTimeFormat()==960,"guitar MIDI file readable at 960 PPQ");auto seq=*file.getTrack(0);seq.updateMatchedPairs();int attacks=0;for(int e=0;e<seq.getNumEvents();++e){const auto* event=seq.getEventPointer(e);if(event->message.isNoteOn()){++attacks;check(event->noteOffObject!=nullptr&&event->message.getChannel()<=6,"guitar string channels and matched releases");}}check(attacks==static_cast<int>(guitarNotes.size()),"all guitar notes exported");}
         juce::MemoryBlock guitarState;p.getStateInformation(guitarState);restored.setStateInformation(guitarState.getData(),static_cast<int>(guitarState.getSize()));
-        check(restored.selectedPart()==3&&restored.partNotes(3)==guitarNotes,"guitar generated-note state round trip");
+        check(restored.selectedPart()==3&&restored.partNotes(3)==guitarNotes&&restored.trackSnapshot(4).clip&&restored.trackSnapshot(4).clip->audio.getNumSamples()==p.trackSnapshot(4).clip->audio.getNumSamples(),"guitar generated-note and rendered-audio state round trip");
         check(p.setProgression("Dm(add9) Bbmaj7 Fmaj9 C/E | Am9 G7(b9) Cadd9 Fmaj7").wasOk(),"advanced cinematic progression accepts extensions altered dominants and slash bass");
         p.setVoiceLeading(true);p.generateMidi();const auto extendedMidi=directory.getChildFile("cinematic.mid");check(p.exportMidi(extendedMidi).wasOk(),"advanced voice-led chord MIDI exports");
         {juce::MidiFile file;auto stream=extendedMidi.createInputStream();check(stream&&file.readFrom(*stream),"advanced chord SMF readable");auto seq=*file.getTrack(0);seq.updateMatchedPairs();int notes=0;for(int e=0;e<seq.getNumEvents();++e){auto* event=seq.getEventPointer(e);if(event->message.isNoteOn()){++notes;check(event->noteOffObject&&event->message.getNoteNumber()>=36&&event->message.getNoteNumber()<=88,"voice-led extended chord notes have valid releases and ranges");}}check(notes>32,"extended chords retain additional tones");}
         // Instantiate and lay out the real editor, then rasterise it to exercise GUI paint paths.
         std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
-        check(editor->getWidth() == 1200 && editor->getHeight() == 760,"editor created and laid out");
+        check(editor->getWidth() == 1200 && editor->getHeight() == 760,"editor preserves saved size and lays out controls");
         for(const auto size:std::array<std::pair<int,int>,4>{{{960,660},{1200,760},{1920,1318},{960,1216}}}){
             editor->setSize(size.first,size.second);
             int dragControls=0;bool import=false,separate=false,progress=false,fallback=false;
@@ -344,11 +353,29 @@ int main() {
             }
             check(dragControls==6&&import&&separate&&progress&&fallback,"graphical splitter and MIDI fallback remain present");
         }
-        editor->setSize(1200,760);
+        editor->setSize(1200,840);
         auto image = editor->createComponentSnapshot(editor->getLocalBounds());
         check(image.isValid(),"editor paint renders");
         if (const auto* path = std::getenv("WINGMAN_SCREENSHOT")) { juce::PNGImageFormat png; juce::FileOutputStream out{juce::File{path}};
             check(out.openedOk() && out.setPosition(0) && out.truncate().wasOk() && png.writeImageToStream(image,out),"write current editor screenshot"); }
+        for(int attempt=0;attempt<4;++attempt){auto closing=std::make_unique<WingmanProcessor>();check(closing->importWav(4,source).wasOk(),"start tempo producer for lifecycle test");check(closing->generateGuitarPart(wingman::GuitarSettings{},true).wasOk(),"start render producer for lifecycle test");const auto closingAt=juce::Time::getMillisecondCounterHiRes();closing.reset();check(juce::Time::getMillisecondCounterHiRes()-closingAt<5000,"active background producers cancel and join promptly before destruction");}
+        auto activate=[&](const juce::String& name){for(auto* child:editor->getChildren())if(auto* button=dynamic_cast<juce::TextButton*>(child))if(button->getButtonText()==name&&button->onClick){button->onClick();return true;}return false;};
+        auto press=[](juce::Component& parent,const juce::String& name){for(auto* child:parent.getChildren())if(auto* button=dynamic_cast<juce::TextButton*>(child))if(button->getButtonText()==name&&button->onClick){button->onClick();return true;}return false;};
+        for(const auto& name:juce::StringArray{"Guitar Studio","Chords & Ideas","Tempo & Analysis","Settings"}){
+            check(activate(name),"main functional tab activation");check(editor->createComponentSnapshot(editor->getLocalBounds()).isValid(),"new workspace tab renders");
+            for(auto* child:editor->getChildren())if(child->isVisible()&&(dynamic_cast<wingman::GuitarStudioPanel*>(child)||dynamic_cast<wingman::CinematicPanel*>(child)||dynamic_cast<wingman::TempoPanel*>(child)||dynamic_cast<wingman::SettingsPanel*>(child))){
+                for(auto* control:child->getChildren())if(control->isVisible())check(child->getLocalBounds().contains(child->getLocalArea(control,control->getLocalBounds())),"panel controls stay within view bounds");
+
+                if(auto* guitarUi=dynamic_cast<wingman::GuitarStudioPanel*>(child)){
+                    check(press(*guitarUi,"Generate MIDI"),"guitar Generate button wired to engine");for(int wait=0;wait<2000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);check(p.selectedPart()==3&&!p.partNotes(3).empty(),"Guitar Studio UI generates actual notes");
+                    check(press(*guitarUi,"Render WAV"),"guitar Render button wired to engine");for(int wait=0;wait<2000&&p.guitarStatus().running;++wait)juce::Thread::sleep(5);check(p.guitarStatus().progress==1&&p.trackSnapshot(4).clip->sampleRate==48000,"Guitar Studio UI renders actual 48k audio");
+                }
+                if(auto* ideasUi=dynamic_cast<wingman::CinematicPanel*>(child)){check(press(*ideasUi,"Generate idea")&&press(*ideasUi,"Apply to Project"),"cinematic ideas GUI generates and applies real chords");check(p.midiIsGenerated(),"cinematic GUI enables exported chord MIDI");}
+                juce::Timer::callPendingTimersSynchronously();
+                if(const auto* path=std::getenv("WINGMAN_SCREENSHOT")){juce::File target=juce::File(path).getSiblingFile(name.retainCharacters("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")+".png");juce::FileOutputStream out(target);juce::PNGImageFormat png;check(out.openedOk()&&out.setPosition(0)&&out.truncate().wasOk()&&png.writeImageToStream(editor->createComponentSnapshot(editor->getLocalBounds()),out),"save actual workspace screenshot");}
+            }
+        }
+        check(activate("Stems & Tracks"),"return to preserved mixer workspace");
         std::cout << checks << " integration checks passed\n";
     } catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; directory.deleteRecursively(); return 1; }
     directory.deleteRecursively(); return 0;

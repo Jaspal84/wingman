@@ -7,6 +7,13 @@ struct Clip {
     juce::AudioBuffer<float> audio;
     double sampleRate = 44100;
     juce::String name;
+    static constexpr int peakHop=256;
+    std::vector<float> peaks;
+    void buildWaveform(){
+        peaks.assign(static_cast<std::size_t>((audio.getNumSamples()+peakHop-1)/peakHop),0);
+        if(audio.getNumChannels()==0)return;
+        for(int i=0;i<audio.getNumSamples();++i){auto& peak=peaks[static_cast<std::size_t>(i/peakHop)];for(int ch=0;ch<audio.getNumChannels();++ch)peak=std::max(peak,std::abs(audio.getSample(ch,i)));}
+    }
 };
 struct Track {
     std::shared_ptr<const Clip> clip;

@@ -77,8 +77,8 @@ std::vector<NoteEvent> generateGuitar(const std::vector<Chord>& harmony,int tran
         }
     }
     std::stable_sort(notes.begin(),notes.end(),[](const auto& a,const auto& b){return a.beat<b.beat;});
-    // Each string owns a channel; terminate repeated notes before the next attack.
-    for(std::size_t i=0;i<notes.size();++i)for(std::size_t j=i+1;j<notes.size();++j)if(notes[i].channel==notes[j].channel&&notes[i].note==notes[j].note){
+    // A string has one fretted pitch at a time; overlap is preserved across strings.
+    for(std::size_t i=0;i<notes.size();++i)for(std::size_t j=i+1;j<notes.size();++j)if(notes[i].channel==notes[j].channel){
         notes[i].duration=std::min(notes[i].duration,std::max(0.001,notes[j].beat-notes[i].beat-0.001));break;
     }
     return notes;

@@ -4,15 +4,27 @@
 #include <cmath>
 #include <functional>
 #include <stdexcept>
+#include <optional>
 namespace wingman {
+class TapTempo {
+    std::vector<double> taps;
+public:
+    std::optional<double> tap(double seconds){
+        if(!std::isfinite(seconds))return {};
+        if(!taps.empty()&&(seconds<=taps.back()||seconds-taps.back()>2))taps.clear();
+        taps.push_back(seconds);if(taps.size()>9)taps.erase(taps.begin());if(taps.size()<2)return {};
+        const double interval=(taps.back()-taps.front())/(taps.size()-1);
+        if(interval<0.25||interval>1.5)return {};return 60/interval;
+    }
+};
 struct TempoResult {bool valid=false;double bpm=0,confidence=0,halfTime=0,doubleTime=0;std::vector<double> onsets,beats;};
-inline TempoResult analyseTempo(const float* samples,int count,double rate,const std::function<bool(double)>& next={}){
+inline TempoResult analyseTempo(const float* samples,int count,double rate,const std::function<bool(double)>& next={},const float* right=nullptr){
     TempoResult result;if(!samples||!std::isfinite(rate)||rate<=0||count<rate*3)return result;
     const int hop=std::max(1,static_cast<int>(rate/200));const double envelopeRate=rate/hop;
     std::vector<double> onset;double previous=0,maximum=0;
     for(int i=0;i+hop<=count;i+=hop){
         if(next&&i%(hop*64)==0&&!next(i/static_cast<double>(count)*0.5))throw std::runtime_error("Tempo analysis cancelled");
-        double sum=0;for(int j=0;j<hop;++j){if(!std::isfinite(samples[i+j]))throw std::invalid_argument("Nonfinite tempo input");sum+=samples[i+j]*static_cast<double>(samples[i+j]);}
+        double sum=0;for(int j=0;j<hop;++j){if(!std::isfinite(samples[i+j]))throw std::invalid_argument("Nonfinite tempo input");if(right&&!std::isfinite(right[i+j]))throw std::invalid_argument("Nonfinite tempo input");sum+=right?(samples[i+j]*static_cast<double>(samples[i+j])+right[i+j]*static_cast<double>(right[i+j]))*0.5:samples[i+j]*static_cast<double>(samples[i+j]);}
         const double energy=std::sqrt(sum/hop),rise=std::max(0.0,energy-previous);previous=energy;onset.push_back(rise);maximum=std::max(maximum,rise);
     }
     if(maximum<1e-6)return result;

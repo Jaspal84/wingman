@@ -1,0 +1,71 @@
+{
+  "platform": "Linux x86_64, GCC 14, JUCE 8.0.6",
+  "builds_passed": [
+    "VST3",
+    "Standalone",
+    "JUCE integration executable",
+    "portable music/DSP executables"
+  ],
+  "final_regressions": {
+    "suites_passed": 13,
+    "suites_total": 13,
+    "seconds": 53.94,
+    "integration_checks": 1035,
+    "real_model_opt_in": false
+  },
+  "real_model_run": {
+    "suites_passed": 13,
+    "suites_total": 13,
+    "seconds": 86.12,
+    "integration_checks": 1068,
+    "cancellation_ms": 150.553,
+    "independent_guitar_preserved": true,
+    "fixture_seconds": 20
+  },
+  "portable_final": {
+    "suites_passed": 12,
+    "suites_total": 12,
+    "seconds": 34.18
+  },
+  "vst3_ids_preserved": [
+    "ABCDEF019182FAEB57676D6157676D31",
+    "ABCDEF011234ABCD57676D6157676D31",
+    "ABCDEF01C0DEF00D57676D6157676D31"
+  ],
+  "au_identity_preserved": {
+    "type": "aumf",
+    "subtype": "Wgm1",
+    "manufacturer": "Wgma",
+    "bundle_id": "com.wingmanaudio.wingman"
+  },
+  "state_format": {
+    "new_version": 2,
+    "tracks": 5,
+    "legacy_version_1_four_track_reading_tested": true
+  },
+  "tempo_fixture_bpms": [
+    80,
+    100,
+    120,
+    140
+  ],
+  "guitar_audio": "Original basic plucked-string synthesis; not realistic sampled instruments",
+  "ideas_backend": "Seeded musical style rules; not a trained AI chord model",
+  "manual_not_executed": [
+    "macOS AU/VST3/standalone build",
+    "auval",
+    "Logic Pro native MIDI/audio dragging",
+    "MainStage",
+    "physical audio devices",
+    "Retina and accessibility",
+    "M1 performance and total DAW memory",
+    "perceptual guitar and source-separation quality"
+  ],
+  "remaining_engineering_limits": [
+    "session mutex can skip audio blocks during edits/state publication",
+    "legacy import/export and large embedded state can block callers",
+    "host MIDI-buffer zero-allocation behavior unproven",
+    "persistent security bookmarks not implemented",
+    "four-stem model does not isolate Guitar"
+  ]
+}
