@@ -1,20 +1,29 @@
 #pragma once
 #include "PluginProcessor.h"
 #include "GUI/Theme.h"
+#include "GUI/FileDragButton.h"
 
-class WingmanEditor final : public juce::AudioProcessorEditor, private juce::Timer {
+class WingmanEditor final : public juce::AudioProcessorEditor, private juce::Timer, public juce::FileDragAndDropTarget {
 public:
     explicit WingmanEditor(WingmanProcessor&);
     ~WingmanEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool isInterestedInFileDrag(const juce::StringArray&) override;
+    void filesDropped(const juce::StringArray&,int,int) override;
     void mouseDown(const juce::MouseEvent&) override;
 private:
     WingmanProcessor& processor;
     wingman::Theme theme;
     juce::TextButton record{"Record audio"}, playButton{"Play"}, stopButton{"Stop"};
     juce::ComboBox keyBox, recordTarget, ideas, partChoice;
-    juce::TextButton dragMidi{"Drag"};
+    wingman::FileDragButton dragMidi;
+    std::array<wingman::FileDragButton,4> stemDrags;
+    juce::TextButton splitChoose{"Choose audio / drop file"}, splitStart{"Separate"}, splitCancel{"Cancel"};
+    juce::Label splitStatus;
+    juce::File splitInput;
+    juce::String splitLastMessage;
+    void startSplit(const juce::File&);
     juce::Slider bpm, timelineZoom, timelineScroll, midiBar;
     juce::Label status;
     juce::TextEditor chordInput, projectTitle;

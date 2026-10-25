@@ -137,6 +137,22 @@ int main() {
             juce::MidiFile decodedMidi; auto partStream=partFile.createInputStream(); check(partStream && decodedMidi.readFrom(*partStream),"read generated part MIDI");
             int attacks=0; for(int i=0;i<decodedMidi.getTrack(0)->getNumEvents();++i) attacks+=decodedMidi.getTrack(0)->getEventPointer(i)->message.isNoteOn();
             check(attacks==static_cast<int>(notes.size()),"exported MIDI has all generated notes");
+            auto roundTrip=*decodedMidi.getTrack(0);roundTrip.updateMatchedPairs();
+            int verifiedNotes=0;bool tempo=false,signature=false;
+            for(int e=0;e<roundTrip.getNumEvents();++e){
+                const auto* event=roundTrip.getEventPointer(e);const auto& msg=event->message;
+                if(msg.isTempoMetaEvent()){tempo=true;check(std::abs(msg.getTempoSecondsPerQuarterNote()-60.0/p.tempo())<0.000002,"exact MIDI tempo");}
+                if(msg.isTimeSignatureMetaEvent())signature=true;
+                if(!msg.isNoteOn())continue;
+                check(event->noteOffObject!=nullptr,"all MIDI attacks have paired releases");
+                const auto found=std::find_if(notes.begin(),notes.end(),[&](const auto& n){
+                    return n.note==msg.getNoteNumber() && n.velocity==msg.getVelocity() && n.channel==msg.getChannel()
+                        && std::abs(n.beat*960-msg.getTimeStamp())<=1
+                        && std::abs((n.beat+n.duration)*960-event->noteOffObject->message.getTimeStamp())<=1;
+                });
+                check(found!=notes.end(),"SMF preserves pitch channel velocity start and duration");++verifiedNotes;
+            }
+            check(verifiedNotes==static_cast<int>(notes.size())&&tempo&&signature,"SMF metadata and every editable note preserved");
             juce::MemoryBlock generatedState; p.getStateInformation(generatedState);
             restored.setStateInformation(generatedState.getData(),static_cast<int>(generatedState.getSize()));
             check(restored.selectedPart()==part && restored.partNotes(part)==notes,"generated notes and selection persist");
@@ -200,9 +216,17 @@ int main() {
             const auto* runtime=std::getenv("WINGMAN_REAL_PYTHON");const auto* inputPath=std::getenv("WINGMAN_REAL_INPUT");
             check(runtime&&inputPath,"real inference requires runtime and input environment selectors");
             WingmanProcessor real;real.prepareToPlay(44100,512);real.configureModel(runtime,modelsPath);
-            check(real.startModelJob("separate",juce::File(inputPath)).wasOk(),"start actual model through embedded plugin worker");
+            const auto convertedInput=directory.getChildFile("real-input.aiff");
+            { juce::AudioFormatManager formats;formats.registerBasicFormats();
+              std::unique_ptr<juce::AudioFormatReader> original(formats.createReaderFor(juce::File(inputPath)));
+              check(original!=nullptr,"read real WAV fixture for AIFF conversion test");
+              juce::AiffAudioFormat aiff;
+              std::unique_ptr<juce::AudioFormatWriter> writer(aiff.createWriterFor(new juce::FileOutputStream(convertedInput),original->sampleRate,original->numChannels,24,{},0));
+              check(writer&&writer->writeFromAudioReader(*original,0,original->lengthInSamples),"create real AIFF fixture"); }
+            check(real.startModelJob("separate",convertedInput).wasOk(),"decode AIFF and run actual model through embedded plugin worker");
             for(int wait=0;wait<3000&&real.modelJobStatus().running;++wait)juce::Thread::sleep(100);
-            const auto done=real.modelJobStatus();std::cout<<"Real model job: "<<done.message<<"\n";
+            const auto done=real.modelJobStatus();
+            check(done.outputDirectory.isDirectory(),"validated raw stems retained for delayed host file import");std::cout<<"Real model job: "<<done.message<<"\n";
             check(!done.running&&done.progress==1&&done.message.contains("Four stems imported"),"actual model inference imports four stems");
             juce::WavAudioFormat sourceFormat;std::unique_ptr<juce::AudioFormatReader> realInput(sourceFormat.createReaderFor(juce::File(inputPath).createInputStream().release(),true));
             check(realInput!=nullptr,"real reference WAV is readable");

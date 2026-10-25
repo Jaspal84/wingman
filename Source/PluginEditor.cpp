@@ -11,7 +11,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     projectTitle.setFont(juce::FontOptions(11.0f));projectTitle.setColour(juce::TextEditor::backgroundColourId,juce::Colours::transparentBlack);
     projectTitle.onFocusLost=[this]{processor.setSessionName(projectTitle.getText());};projectTitle.onReturnKey=projectTitle.onFocusLost;
     const auto size = processor.editorSize();
-    setResizable(true,false); setResizeLimits(960,608,1920,1216);
+    setResizable(true,false); setResizeLimits(960,660,1920,1318);
     setSize(size.first,size.second);
     addAndMakeVisible(sync); sync.setTooltip("Follow the DAW playhead; local Play/BPM controls are disabled while synchronized"); sync.onClick=[this]{processor.setHostSync(sync.getToggleState());};
     addAndMakeVisible(midiBar); midiBar.setRange(1,32,1); midiBar.setValue(1); midiBar.setTooltip("Drum step-sequencer bar (1-based)"); midiBar.onValueChange=[this]{repaint();};
@@ -20,12 +20,23 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
     partChoice.onChange = [this] { processor.selectPart(partChoice.getSelectedId()-2); repaint(); };
     dragMidi.setTooltip("Drag the selected MIDI part into a compatible DAW");
-    dragMidi.onClick = [this] {
-        const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("wingman-midi-",".mid",false);
-        const auto result = processor.exportMidi(file);
-        if (result.failed()) { showResult(result,{}); return; }
-        juce::DragAndDropContainer::performExternalDragDropOfFiles({file.getFullPathName()},false,this,[file]{file.deleteFile();});
+    dragMidi.prepare = [this](juce::File& file) {
+        const auto dir=juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("Wingman-DragFiles").getChildFile(juce::Uuid().toString());
+        if(dir.createDirectory().failed())return juce::Result::fail("Cannot create MIDI drag directory; use Export MIDI");
+        file=dir.getChildFile(partChoice.getText().replaceCharacter(' ','-')+".mid");
+        return processor.exportMidi(file);
     };
+    dragMidi.report=[this](const auto& message){status.setText(message,juce::dontSendNotification);};
+    for(auto* c:std::initializer_list<juce::Component*>{&splitChoose,&splitStart,&splitCancel,&splitStatus})addAndMakeVisible(c);
+    splitChoose.onClick=[this]{
+        chooser=std::make_unique<juce::FileChooser>("Choose audio to split (up to 120 seconds)",juce::File{},"*.wav;*.aif;*.aiff;*.flac;*.mp3;*.m4a");
+        chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe=juce::Component::SafePointer<WingmanEditor>(this)](const auto& fc){
+            if(safe&&fc.getResult()!=juce::File{}){safe->splitInput=fc.getResult();safe->splitChoose.setButtonText(safe->splitInput.getFileName());}
+        });
+    };
+    splitStart.onClick=[this]{startSplit(splitInput);};
+    splitCancel.onClick=[this]{processor.cancelModelJob();};
+    splitStatus.setText("STEM SPLITTER | Select audio. Configure runtime in Model Manager. Replaces four lanes.",juce::dontSendNotification);
     addAndMakeVisible(models); addAndMakeVisible(detect); addAndMakeVisible(cancel);
     detect.setTooltip("Analyse the selected input lane in a background worker; replaces the chord progression");
     detect.onClick = [this] { showResult(processor.startAnalysis(recordTarget.getSelectedId()-1),"Harmonic analysis started"); };
@@ -82,6 +93,16 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
         pans[n].setTextBoxStyle(juce::Slider::NoTextBox,false,0,0); pans[n].setTooltip("Stereo balance: left / centre / right");
         pans[n].setName(names[n]+" stereo balance"); pans[n].setDoubleClickReturnValue(true,0);
         pans[n].onValueChange = [this,i,n] { processor.setTrackPan(i,static_cast<float>(pans[n].getValue())); };
+        addAndMakeVisible(stemDrags[n]);
+        stemDrags[n].setTooltip("Drag raw separated WAV to DAW (before lane volume/pan). Export WAV includes mixer settings.");
+        stemDrags[n].prepare=[this,n](juce::File& file){
+            const juce::StringArray rawNames{"vocals.wav","other.wav","bass.wav","drums.wav"};
+            const auto job=processor.modelJobStatus();
+            if(job.outputDirectory==juce::File{})return juce::Result::fail("Separate audio first, or use Export WAV for imported lanes");
+            file=job.outputDirectory.getChildFile(rawNames[static_cast<int>(n)]);
+            return file.existsAsFile()?juce::Result::ok():juce::Result::fail("Stem drag file expired; separate again or use Export WAV");
+        };
+        stemDrags[n].report=dragMidi.report;
         stemExports[n].setButtonText("Export " + names[n]); stemExports[n].onClick = [this,i] { chooseExport(false,i); };
     }
     chordInput.setMultiLine(false); chordInput.setText(processor.progression());
@@ -124,7 +145,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     };
     status.setColour(juce::Label::textColourId,juce::Colour{0xffc4cadb});
     status.setText("Import WAVs or record input. Edit a progression, then Generate MIDI.",juce::dontSendNotification);
-    refresh(); startTimerHz(20);
+    resized(); refresh(); startTimerHz(20);
 }
 WingmanEditor::~WingmanEditor() { stopTimer(); setLookAndFeel(nullptr); }
 void WingmanEditor::updateMix(int i) {
@@ -180,6 +201,13 @@ void WingmanEditor::refresh() {
     repaint();
 }
 void WingmanEditor::timerCallback() {
+    const auto job=processor.modelJobStatus();
+    splitStart.setEnabled(!job.running && splitInput.existsAsFile()); splitChoose.setEnabled(!job.running);splitCancel.setEnabled(job.running);
+    if(job.running || job.message!=splitLastMessage){
+        splitLastMessage=job.message;
+        if(job.message!="No model operation has run")splitStatus.setText(job.message+(job.running?" | "+juce::String(job.progress*100,0)+"%":""),juce::dontSendNotification);
+    }
+    for(auto& button:stemDrags)button.setEnabled(!job.running && job.outputDirectory!=juce::File{});
     const bool running = processor.analysisIsRunning();
     cancel.setEnabled(running); detect.setEnabled(!running);
     if (running) status.setText("Analysing harmony: "+juce::String(processor.analysisPercent()*100,0)+"%",juce::dontSendNotification);
@@ -218,7 +246,7 @@ void WingmanEditor::rebuildWaveform(int i) {
     }
 }
 void WingmanEditor::resized() {
-    uiScale = std::min(getWidth()/1200.0f,getHeight()/760.0f);
+    uiScale = std::min(getWidth()/1200.0f,getHeight()/824.0f);
     processor.setEditorSize(getWidth(),getHeight());
     projectTitle.setBounds(28,55,174,18);
     models.setBounds(942,24,222,34); sync.setBounds(870,24,68,34);
@@ -229,7 +257,7 @@ void WingmanEditor::resized() {
         const auto n = static_cast<std::size_t>(i); const std::array<int,4> row{0,3,2,1}; const int y = 131+row[n]*84;
         imports[n].setBounds(28,y+32,100,24); solos[n].setBounds(142,y+14,32,28);
         mutes[n].setBounds(180,y+14,32,28); pans[n].setBounds(142,y+47,125,18); volumes[n].setBounds(218,y+4,47,47);
-        waveformBounds[n] = {282,y+4,598,59}; stemExports[n].setBounds(912,y+19,252,31); rebuildWaveform(i);
+        waveformBounds[n] = {282,y+4,598,59}; stemExports[n].setBounds(912,y+19,186,31); stemDrags[n].setBounds(1104,y+19,60,31); rebuildWaveform(i);
     }
     ideas.setBounds(124,499,240,32); chordInput.setBounds(28,552,594,34); apply.setBounds(638,552,126,34);
     detect.setBounds(382,499,190,32); cancel.setBounds(584,499,180,32);
@@ -241,6 +269,13 @@ void WingmanEditor::resized() {
     exportMidi.setBounds(1044,499,120,32); exportMix.setBounds(912,455,252,30);
     timelineZoom.setBounds(768,548,112,18); timelineScroll.setBounds(768,574,112,18);
     status.setBounds(24,720,1152,28);
+    // Reserve an independent splitter row without removing existing controls.
+    for(auto* child:getChildren())if(child->getY()>=90 && child!=&splitChoose && child!=&splitStart && child!=&splitCancel && child!=&splitStatus)
+        child->setTopLeftPosition(child->getX(),child->getY()+64);
+    for(auto& bounds:waveformBounds)bounds.translate(0,64);
+    chordBounds.translate(0,64);midiBounds.translate(0,64);
+    splitChoose.setBounds(28,88,300,30);splitStart.setBounds(340,88,120,30);splitCancel.setBounds(472,88,100,30);splitStatus.setBounds(28,121,1136,24);
+    for(int i=0;i<4;++i)rebuildWaveform(i);
     for (auto* child : getChildren()) child->setTransform(juce::AffineTransform::scale(uiScale));
 }
 void WingmanEditor::paint(juce::Graphics& g) {
@@ -255,17 +290,17 @@ void WingmanEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colours::lightgrey);
     g.drawText("KEY",493,11,72,15,juce::Justification::centredLeft); g.drawText("BPM",581,11,70,15,juce::Justification::centredLeft);
 
-    g.setColour(wingman::panel); g.fillRoundedRectangle(12,92,1176,399,14); g.fillRoundedRectangle(12,493,1176,216,14);
+    g.setColour(wingman::panel); g.fillRoundedRectangle(12,156,1176,399,14); g.fillRoundedRectangle(12,557,1176,216,14);
     g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(15.0f,juce::Font::bold));
-    g.drawText("INPUT TRACKS",28,101,210,23,juce::Justification::centredLeft);
-    g.drawText("EXPORT STEMS",912,101,252,23,juce::Justification::centredLeft);
-    g.drawText("IDEAS",28,499,90,32,juce::Justification::centredLeft);
+    g.drawText("INPUT TRACKS",28,165,210,23,juce::Justification::centredLeft);
+    g.drawText("EXPORT STEMS",912,165,252,23,juce::Justification::centredLeft);
+    g.drawText("IDEAS",28,563,90,32,juce::Justification::centredLeft);
 
     double duration = 1;
     for (const auto& clip : cachedClips) if (clip) duration = std::max(duration,clip->audio.getNumSamples()/clip->sampleRate);
     g.setColour(juce::Colours::lightgrey); g.setFont(juce::FontOptions(11.0f));
     for (int division = 0; division < 8; ++division)
-        g.drawText(juce::String(duration*division/8.0,1) + " s",282+division*598/8,104,65,18,juce::Justification::centredLeft);
+        g.drawText(juce::String(duration*division/8.0,1) + " s",282+division*598/8,168,65,18,juce::Justification::centredLeft);
     for (int i = 0; i < 4; ++i) {
         const auto n = static_cast<std::size_t>(i); const auto bounds = waveformBounds[n];
         g.setColour(wingman::trackColours[n]); g.setFont(juce::FontOptions(16.0f,juce::Font::bold));
@@ -285,12 +320,12 @@ void WingmanEditor::paint(juce::Graphics& g) {
     for (const auto& region : harmony.regions) {
         const auto x = 282.0f+static_cast<float>(region.start/duration*598);
         const auto width = static_cast<float>((region.end-region.start)/duration*598);
-        g.setColour(wingman::accent.withAlpha(0.25f)); g.fillRect(x,122.0f,width,12.0f);
+        g.setColour(wingman::accent.withAlpha(0.25f)); g.fillRect(x,186.0f,width,12.0f);
         g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(10.0f));
-        g.drawText(juce::String(wingman::chordName(region.chord)),static_cast<int>(x),121,static_cast<int>(width),13,juce::Justification::centredLeft);
+        g.drawText(juce::String(wingman::chordName(region.chord)),static_cast<int>(x),185,static_cast<int>(width),13,juce::Justification::centredLeft);
     }
     g.setColour(juce::Colours::lightgrey); g.setFont(juce::FontOptions(12.0f));
-    g.drawText("CHORDS | suffix ^inversion:beats | MIDI loops while playing",28,532,800,18,juce::Justification::centredLeft);
+    g.drawText("CHORDS | suffix ^inversion:beats | MIDI loops while playing",28,596,800,18,juce::Justification::centredLeft);
     g.setColour(juce::Colour{0xff101219}); g.fillRoundedRectangle(chordBounds.toFloat(),6); g.fillRoundedRectangle(midiBounds.toFloat(),6);
     auto tokens = juce::StringArray::fromTokens(processor.progression()," ,|\t\n",""); tokens.removeEmptyStrings();
     if (!tokens.isEmpty()) {
@@ -406,4 +441,18 @@ void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
         }
         cursor += chord->beats;
     }
+}
+
+bool WingmanEditor::isInterestedInFileDrag(const juce::StringArray& files){
+    return files.size()==1 && juce::File(files[0]).hasFileExtension("wav;aif;aiff;flac;mp3;m4a");
+}
+void WingmanEditor::filesDropped(const juce::StringArray& files,int,int){
+    if(!isInterestedInFileDrag(files))return;
+    if(processor.modelJobStatus().running){splitStatus.setText("Wait for the current operation or Cancel",juce::dontSendNotification);return;}
+    splitInput=juce::File(files[0]);splitChoose.setButtonText(splitInput.getFileName());
+    splitStatus.setText("Ready: "+splitInput.getFileName()+" | Separate replaces all four lanes",juce::dontSendNotification);
+}
+void WingmanEditor::startSplit(const juce::File& input){
+    const auto result=processor.startModelJob("separate",input);
+    splitStatus.setText(result.wasOk()?"Starting separation...":result.getErrorMessage(),juce::dontSendNotification);
 }

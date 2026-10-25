@@ -101,3 +101,5 @@ ctest --test-dir build -R '^integration$' -V
 ```
 
 This test completes separation/import/export and then starts another model run to cancel after real chunk processing. Normal tests report when this opt-in block is not requested. See the M1 runbook for clone/update, dependencies, native build, installation, actual-identifier AU validation and real-model commands.
+
+Main-interface Stem Splitter and held-gesture MIDI/stem dragging: see [usage and Logic verification checklist](Documentation/STEM-SPLITTER-AND-MIDI-DRAG.md). Native Logic dragging remains unverified until tested on macOS.

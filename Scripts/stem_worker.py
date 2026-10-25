@@ -60,6 +60,11 @@ def separate(args):
     def cancelled():
         if args.cancel and Path(args.cancel).exists(): raise InterruptedError('Separation cancelled')
     cancelled()
+    if not args.input or not Path(args.input).is_file():
+        raise FileNotFoundError('Input audio file does not exist')
+    output_path = Path(args.output)
+    if output_path.exists() and (not output_path.is_dir() or any(output_path.iterdir())):
+        raise ValueError('Output directory must be empty; existing files are preserved')
     model_path = verify_model(args.models)  # Validate before importing torch or loading pickle weights.
     import numpy as np
     import soundfile as sf

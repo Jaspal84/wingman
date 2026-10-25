@@ -329,6 +329,7 @@ juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
         if (!generated) return juce::Result::fail("Generate MIDI first");
         events.addEvent(juce::MidiMessage::tempoMetaEvent(static_cast<int>(60000000/bpm)));
         events.addEvent(juce::MidiMessage::timeSignatureMetaEvent(4,4));
+        events.addEvent(juce::MidiMessage::textMetaEvent(3,activePart<0?"Wingman Chords":activePart==0?"Wingman Bass":activePart==1?"Wingman Drums":"Wingman Melody"));
         for (int i = 0; i < sequence.getNumEvents(); ++i) {
             auto msg = sequence.getEventPointer(i)->message;
             msg.setTimeStamp(msg.getTimeStamp()*960.0); events.addEvent(msg);
@@ -486,6 +487,6 @@ juce::Result WingmanProcessor::importStemSet(const std::array<juce::File,4>& fil
         for(int ch=0;ch<2;++ch)for(int s=0;s<clip->audio.getNumSamples();++s)if(!std::isfinite(clip->audio.getSample(ch,s)))return juce::Result::fail("Nonfinite separated stem");
         loaded[static_cast<std::size_t>(i)]=std::move(clip);
     }
-    const juce::ScopedLock lock(mutex);for(int i=0;i<4;++i)tracks[static_cast<std::size_t>(i)].clip=loaded[static_cast<std::size_t>(i)];
+    const juce::ScopedLock lock(mutex);for(int i=0;i<4;++i)tracks[static_cast<std::size_t>(i)].clip.swap(loaded[static_cast<std::size_t>(i)]);
     seconds=0;panic=true;++audioRevision;analysis={};return juce::Result::ok();
 }

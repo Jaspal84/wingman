@@ -36,6 +36,15 @@ class WorkerTests(unittest.TestCase):
     def test_cancel_before_loading_model(self):
         flag=self.root/'cancel'; flag.touch()
         with self.assertRaises(InterruptedError): worker.separate(argparse.Namespace(cancel=flag))
+    def test_existing_output_preserved_before_model_load(self):
+        source=self.root/'input.wav';source.write_bytes(b'fixture')
+        output=self.root/'output';output.mkdir();sentinel=output/'vocals.wav';sentinel.write_bytes(b'keep')
+        with self.assertRaisesRegex(ValueError,'existing files are preserved'):
+            worker.separate(argparse.Namespace(cancel=None,input=source,output=output))
+        self.assertEqual(sentinel.read_bytes(),b'keep')
+    def test_missing_input_before_model_load(self):
+        with self.assertRaisesRegex(FileNotFoundError,'Input audio'):
+            worker.separate(argparse.Namespace(cancel=None,input=self.root/'absent.wav'))
     def test_status_replaces_previous_state(self):
         path=self.root/'status.json'; worker.write_status(path,state='running',progress=0.5)
         worker.write_status(path,state='cancelled',progress=0)
