@@ -2,6 +2,8 @@
 #include "PluginEditor.h"
 #include "AI/ModelManager/ModelJob.h"
 #include <limits>
+#include "MIDI/MidiExport.h"
+#include "Music/GuitarState.h"
 #include "Files/DragFileStore.h"
 namespace {
 constexpr double maxClipSeconds = 120.0;
@@ -14,7 +16,7 @@ WingmanProcessor::WingmanProcessor()
     dragCleanupThread.start([](wingman::CancellationToken){wingman::DragFileStore::cleanupExpired(wingman::DragFileStore::root(),juce::Time::getCurrentTime());});
     setProgression(chordText);
 }
-WingmanProcessor::~WingmanProcessor() { modelJob.reset(); cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
+WingmanProcessor::~WingmanProcessor() { cancelGuitar();guitarWorker.join(); modelJob.reset(); cancelAnalysis(); if (analysisThread.joinable()) analysisThread.join(); }
 void WingmanProcessor::cancelAnalysis() { analysisThread.request_stop(); }
 juce::String WingmanProcessor::analysisMessage() const { const juce::ScopedLock lock(mutex); return analysisStatus; }
 wingman::HarmonicResult WingmanProcessor::analysisSnapshot() const { const juce::ScopedLock lock(mutex); return analysis; }
@@ -175,7 +177,7 @@ bool WingmanProcessor::isPlaying() const { const juce::ScopedLock lock(mutex); r
 double WingmanProcessor::positionSeconds() const { const juce::ScopedLock lock(mutex); return seconds; }
 void WingmanProcessor::setTempo(double value) { const juce::ScopedLock lock(mutex); if (std::isfinite(value)) { bpm = juce::jlimit(40.0,240.0,value); panic = true; seconds = 0; } }
 double WingmanProcessor::tempo() const { const juce::ScopedLock lock(mutex); return bpm; }
-void WingmanProcessor::setKey(int value) { const juce::ScopedLock lock(mutex); if (transpose != juce::jlimit(0,11,value)) { for (auto& part : parts) part.clear(); activePart = -1; } transpose = juce::jlimit(0,11,value); rebuildMidi(); }
+void WingmanProcessor::setKey(int value) { const juce::ScopedLock lock(mutex); if (transpose != juce::jlimit(0,11,value)) { for (auto& part : parts) part.clear(); guitarNotes.clear(); activePart = -1; } transpose = juce::jlimit(0,11,value); rebuildMidi(); }
 int WingmanProcessor::key() const { const juce::ScopedLock lock(mutex); return transpose; }
 void WingmanProcessor::setPreview(bool enabled) { const juce::ScopedLock lock(mutex); previewEnabled = enabled; panic = true; }
 bool WingmanProcessor::preview() const { const juce::ScopedLock lock(mutex); return previewEnabled; }
@@ -243,14 +245,15 @@ juce::Result WingmanProcessor::setProgression(const juce::String& text) {
 }
 juce::String WingmanProcessor::progression() const { const juce::ScopedLock lock(mutex); return chordText; }
 void WingmanProcessor::rebuildMidi() {
-    if (activePart >= 0) { sequence = wingman::patternSequence(parts[static_cast<std::size_t>(activePart)]); sequenceLength = settings[static_cast<std::size_t>(activePart)].bars*4.0; }
+    if(activePart==3){sequence=wingman::patternSequence(guitarNotes);sequenceLength=guitarSettings.bars*guitarSettings.numerator*4.0/guitarSettings.denominator;}
+    else if (activePart >= 0) { sequence = wingman::patternSequence(parts[static_cast<std::size_t>(activePart)]); sequenceLength = settings[static_cast<std::size_t>(activePart)].bars*4.0; }
     else { sequence = wingman::makeChords(chords, transpose); sequenceLength = wingman::progressionBeats(chords); }
     panic = true; seconds = 0;
 }
-void WingmanProcessor::selectPart(int part) { const juce::ScopedLock lock(mutex); activePart = juce::jlimit(-1,2,part); generated = activePart < 0 || !parts[static_cast<std::size_t>(activePart)].empty(); rebuildMidi(); }
+void WingmanProcessor::selectPart(int part) { const juce::ScopedLock lock(mutex); activePart = juce::jlimit(-1,3,part); generated = activePart < 0 || (activePart==3?!guitarNotes.empty():!parts[static_cast<std::size_t>(activePart)].empty()); rebuildMidi(); }
 int WingmanProcessor::selectedPart() const { const juce::ScopedLock lock(mutex); return activePart; }
 wingman::PatternSettings WingmanProcessor::partSettings(int part) const { const juce::ScopedLock lock(mutex); return part >= 0 && part < 3 ? settings[static_cast<std::size_t>(part)] : wingman::PatternSettings{}; }
-std::vector<wingman::NoteEvent> WingmanProcessor::partNotes(int part) const { const juce::ScopedLock lock(mutex); return part >= 0 && part < 3 ? parts[static_cast<std::size_t>(part)] : std::vector<wingman::NoteEvent>{}; }
+std::vector<wingman::NoteEvent> WingmanProcessor::partNotes(int part) const { const juce::ScopedLock lock(mutex); return part==3?guitarNotes:part >= 0 && part < 3 ? parts[static_cast<std::size_t>(part)] : std::vector<wingman::NoteEvent>{}; }
 juce::Result WingmanProcessor::generatePart(int part,const wingman::PatternSettings& config) {
     if (part < 0 || part > 2) return juce::Result::fail("Invalid part");
     std::vector<wingman::Chord> harmony; int keyCopy; juce::String text;
@@ -325,25 +328,11 @@ juce::Result WingmanProcessor::finishRecording() {
     return juce::Result::ok();
 }
 juce::Result WingmanProcessor::exportMidi(const juce::File& file) {
-    juce::MidiMessageSequence events;
-    {
-        const juce::ScopedLock lock(mutex);
-        if (!generated) return juce::Result::fail("Generate MIDI first");
-        events.addEvent(juce::MidiMessage::tempoMetaEvent(static_cast<int>(60000000/bpm)));
-        events.addEvent(juce::MidiMessage::timeSignatureMetaEvent(4,4));
-        events.addEvent(juce::MidiMessage::textMetaEvent(3,activePart<0?"Wingman Chords":activePart==0?"Wingman Bass":activePart==1?"Wingman Drums":"Wingman Melody"));
-        for (int i = 0; i < sequence.getNumEvents(); ++i) {
-            auto msg = sequence.getEventPointer(i)->message;
-            msg.setTimeStamp(msg.getTimeStamp()*960.0); events.addEvent(msg);
-        }
-        auto end = juce::MidiMessage::endOfTrack(); end.setTimeStamp(sequenceLength*960); events.addEvent(end);
-    }
-    juce::MidiFile midi; midi.setTicksPerQuarterNote(960); midi.addTrack(events);
-    juce::TemporaryFile temporary(file);
-    { juce::FileOutputStream out(temporary.getFile());
-      if (!out.openedOk() || !midi.writeTo(out)) return juce::Result::fail("Cannot write MIDI");
-      out.flush(); if (out.getStatus().failed()) return out.getStatus(); }
-    return temporary.overwriteTargetFileWithTemporary() ? juce::Result::ok() : juce::Result::fail("Cannot replace destination");
+    juce::MidiMessageSequence events;double tempoCopy,length;int numerator=4,denominator=4;juce::String name;
+    {const juce::ScopedLock lock(mutex);if(!generated)return juce::Result::fail("Generate MIDI first");events=sequence;tempoCopy=bpm;length=sequenceLength;
+     const juce::StringArray labels{"Chords","Bass","Drums","Melody","Guitar"};name="JASWINGMAN "+labels[activePart+1];
+     if(activePart==3){numerator=guitarSettings.numerator;denominator=guitarSettings.denominator;}}
+    return wingman::writeMidi(file,events,tempoCopy,numerator,denominator,length,name);
 }
 juce::Result WingmanProcessor::exportWav(const juce::File& file, int track) {
     std::array<wingman::Track,5> snapshot;
@@ -405,6 +394,7 @@ void WingmanProcessor::getStateInformation(juce::MemoryBlock& destination) {
         }
         patterns.addChild(node,-1,nullptr);
     }
+    state.setProperty("guitar",wingman::saveGuitar(guitarSettings,guitarNotes),nullptr);
     juce::MemoryOutputStream patternStream; patterns.writeToStream(patternStream);
     state.setProperty("patterns",juce::var(patternStream.getMemoryBlock()),nullptr); state.setProperty("activePart",activePart,nullptr);
     juce::MemoryOutputStream stream(destination,false); state.writeToStream(stream);
@@ -413,6 +403,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
     auto state = juce::ValueTree::readFromData(data,static_cast<std::size_t>(std::max(0,size)));
     const int version=state["version"];
     if(!state.hasType("Wingman") || !((version==1&&state.getNumChildren()==4)||(version==2&&state.getNumChildren()==5)))return;
+    cancelGuitar();
     std::array<wingman::Track,5> restored;
     for (int i = 0; i < state.getNumChildren(); ++i) {
         auto node = state.getChild(i); auto& t = restored[static_cast<std::size_t>(i)];
@@ -459,6 +450,7 @@ void WingmanProcessor::setStateInformation(const void* data, int size) {
             activePart=juce::jlimit(-1,2,static_cast<int>(state.getProperty("activePart",-1)));
         } catch(...) { for(auto& part : parts)part.clear(); activePart=-1; }
     }
+    try{wingman::loadGuitar(state["guitar"],guitarSettings,guitarNotes);if(static_cast<int>(state.getProperty("activePart",-1))==3&&!guitarNotes.empty())activePart=3;}catch(...){guitarSettings={};guitarNotes.clear();}
     syncEnabled=state.getProperty("hostSync",false); hostClock.reset();
     generated = state["generated"]; previewEnabled = state["preview"]; playing = recording = false; rebuildMidi();
 }
@@ -498,4 +490,20 @@ void WingmanProcessor::prepareTrackDrag(int track){if(validTrack(track))audioDra
 juce::Result WingmanProcessor::trackDragFile(int track,juce::File& file){
     if(!validTrack(track))return juce::Result::fail("Invalid audio lane");
     prepareTrackDrag(track);return audioDragCache.get(track,trackSnapshot(track).clip,file);
+}
+
+wingman::GuitarSettings WingmanProcessor::guitarConfig()const{const juce::ScopedLock lock(mutex);return guitarSettings;}
+wingman::ModelJobInfo WingmanProcessor::guitarStatus()const{const juce::ScopedLock lock(mutex);return {guitarBusy.load(),guitarProgress.load(),guitarMessage,{}};}
+void WingmanProcessor::cancelGuitar(){guitarWorker.request_stop();}
+juce::Result WingmanProcessor::generateGuitarPart(const wingman::GuitarSettings& config){
+    if(guitarBusy.exchange(true))return juce::Result::fail("Guitar generation is already running");
+    std::vector<wingman::Chord> harmony;int keyCopy;juce::String text;
+    {const juce::ScopedLock lock(mutex);harmony=chords;keyCopy=transpose;text=chordText;guitarMessage="Generating playable guitar MIDI...";}guitarProgress=0;
+    guitarWorker.start([this,config,harmony,keyCopy,text](wingman::CancellationToken token){
+        try{auto notes=wingman::generateGuitar(harmony,keyCopy,config,[&]{return !token.stop_requested();});
+            if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");
+            const juce::ScopedLock lock(mutex);if(token.stop_requested())throw std::runtime_error("Guitar generation cancelled");if(text!=chordText||keyCopy!=transpose)throw std::runtime_error("Harmony changed; regenerate guitar");
+            guitarNotes=std::move(notes);guitarSettings=config;activePart=3;generated=true;rebuildMidi();guitarProgress=1;guitarMessage="Guitar MIDI generated; audio requires Render WAV";
+        }catch(const std::exception& ex){const juce::ScopedLock lock(mutex);guitarMessage=ex.what();}guitarBusy=false;
+    });return juce::Result::ok();
 }

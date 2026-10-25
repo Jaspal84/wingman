@@ -17,7 +17,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     addAndMakeVisible(sync); sync.setTooltip("Follow the DAW playhead; local Play/BPM controls are disabled while synchronized"); sync.onClick=[this]{processor.setHostSync(sync.getToggleState());};
     addAndMakeVisible(midiBar); midiBar.setRange(1,32,1); midiBar.setValue(1); midiBar.setTooltip("Drum step-sequencer bar (1-based)"); midiBar.onValueChange=[this]{repaint();};
     addAndMakeVisible(partChoice); addAndMakeVisible(dragMidi);
-    partChoice.addItemList({"Chord MIDI","Bass MIDI","Drum MIDI","Melody MIDI"},1);
+    partChoice.addItemList({"Chord MIDI","Bass MIDI","Drum MIDI","Melody MIDI","Guitar MIDI"},1);
     partChoice.setSelectedId(processor.selectedPart()+2,juce::dontSendNotification);
     partChoice.onChange = [this] { processor.selectPart(partChoice.getSelectedId()-2); repaint(); };
     dragMidi.setTooltip("Drag the selected MIDI part into a compatible DAW");
@@ -109,6 +109,7 @@ WingmanEditor::WingmanEditor(WingmanProcessor& p) : AudioProcessorEditor(p), pro
     apply.onClick = applyChords; chordInput.onReturnKey = applyChords;
     generate.onClick = [this] {
         const int part = partChoice.getSelectedId()-2;
+        if(part==3){showResult(processor.generateGuitarPart(processor.guitarConfig()),"Generating guitar MIDI");return;}
         if (part >= 0) {
             auto initial = processor.partSettings(part);
             const auto harmony = processor.analysisSnapshot();
@@ -388,6 +389,7 @@ void WingmanEditor::mouseDown(const juce::MouseEvent& event) {
         const int bar=juce::jlimit(0,settings.bars-1,static_cast<int>(midiBar.getValue())-1);
         showResult(processor.toggleDrumStep(bar,static_cast<int>((point.y-midiBounds.getY())/midiBounds.getHeight()*9),static_cast<int>((point.x-midiBounds.getX())/midiBounds.getWidth()*16)),"Drum step changed"); repaint(); return;
     }
+    if(midiBounds.toFloat().contains(point)&&processor.selectedPart()==3)return;
     if(midiBounds.toFloat().contains(point)&&processor.selectedPart()>=0) {
         const int part=processor.selectedPart();const auto notes=processor.partNotes(part);const auto settings=processor.partSettings(part);
         int lowest=127,highest=0;for(const auto& note:notes){lowest=std::min(lowest,note.note);highest=std::max(highest,note.note);}

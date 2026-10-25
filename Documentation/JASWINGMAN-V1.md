@@ -19,3 +19,12 @@ Guitar. State version 2 stores five tracks; version-1 four-track states still
 load with an empty Guitar lane. The model importer intentionally remains exactly
 four stems and does not overwrite Guitar. Linux build and 8/8 CTest passed
 (13.38s), including five-track round trip and generated legacy-state loading.
+
+Stage 3: standard-tuning, fret-constrained, chord-aware guitar MIDI engine with
+seeded strums, eight techniques, eight style rules, five synthesis-profile
+selections and four variations. Per-string channels and staggered attacks avoid
+simultaneous block chords and repeated-note ambiguity. Background generation,
+selected Guitar MIDI export/drag, and generated note/config state are connected.
+Linux VST3/standalone build and 9/9 CTest passed (13.27s), including guitar SMF
+readability, PPQ, release pairing and note/config round trip. Guitar audio is not
+implied by this MIDI stage. Musical styles are programmed rules, not an AI model.
