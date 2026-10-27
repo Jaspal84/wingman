@@ -1,5 +1,10 @@
 # Jas PRO Ultimate Loop Studio / OmniLoop 8
 
+**Historical baseline:** the single-clip implementation described below has been
+extended by [the editable timeline milestone](TIMELINE-MILESTONE-A.md). That
+document describes the current standalone controls, disk-backed cache and v2
+projects. The old plugin and its single-clip engine remain unchanged.
+
 This is a separate, early standalone product. It does not replace JASWINGMAN PRO,
 change its AU/VST3 identifiers, migrate its sessions, or advertise unfinished AI.
 The existing plugin remains the Guitar Studio and stem-separation product while

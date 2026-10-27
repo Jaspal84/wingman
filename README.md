@@ -143,3 +143,8 @@ playback, while Basic Synthesis remains explicitly labeled.
 
 A separate eight-track standalone target is under development, preserving the
 existing plugin. See [implementation status and Mac build commands](Documentation/OMNILOOP-IMPLEMENTATION.md).
+
+The standalone now has an editable multiclip timeline with undo/redo, beat snap,
+trims, fades, BPM, disk-backed imports and version-two arrangement files. See
+[Timeline Milestone A](Documentation/TIMELINE-MILESTONE-A.md) for controls, exact
+M1 build/validation steps and remaining limitations.
