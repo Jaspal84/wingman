@@ -138,3 +138,8 @@ Development instrument upgrade: [user-SFZ banks, guitar controls, licensing,
 validation and exact Mac commands](Documentation/GUITAR-INSTRUMENT.md).
 No production guitar recordings are bundled; verified user libraries enable sampled
 playback, while Basic Synthesis remains explicitly labeled.
+
+## Jas PRO Ultimate Loop Studio development
+
+A separate eight-track standalone target is under development, preserving the
+existing plugin. See [implementation status and Mac build commands](Documentation/OMNILOOP-IMPLEMENTATION.md).

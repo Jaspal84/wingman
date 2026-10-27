@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "Studio/Project.h"
 #include "GUI/GeneratorPanel.h"
 #include "GUI/ModelPanel.h"
 #include "GUI/GuitarStudioPanel.h"
@@ -32,6 +33,21 @@ int main() {
         check(unrelated.isDirectory(),"cleanup preserves unrelated directories");
         check(wingman::DragFileStore::cleanupExpired(cache,now)==1,"remaining expired exports removed on next pass");
         check(wingman::DragFileStore::cleanupExpired(cache,now)==0,"recent exports retained across repeated cleanup");
+        {
+            wingman::ArrangementPlaybackEngine arrangement;
+            std::array<wingman::Track,8> lanes;
+            for(auto& lane:lanes){auto clip=std::make_shared<wingman::Clip>();clip->sampleRate=24000;clip->audio.setSize(1,24);for(int n=0;n<24;++n)clip->audio.setSample(0,n,.05f);lane.clip=clip;lane.gain=1;}
+            juce::AudioBuffer<float> mix(2,48);
+            auto render=[&](bool loop){arrangement.publish(lanes,loop);arrangement.seek(0);arrangement.playing=true;arrangement.begin();mix.clear();arrangement.render(mix,48000);};
+            render(false);check(std::abs(mix.getSample(0,10)-.4f)<1e-6,"all eight arrangement lanes mix with mono-to-stereo rate conversion");
+            check(std::abs(mix.getSample(1,10)-.4f)<1e-6,"eight-track stereo output");
+            check(!arrangement.playing.load(),"eight-track transport stops at final sample");
+            lanes[7].solo=true;render(false);check(std::abs(mix.getSample(0,10)-.05f)<1e-6,"eighth lane participates in solo routing");
+            lanes[7].pan=1;render(false);check(mix.getSample(0,10)==0&&std::abs(mix.getSample(1,10)-.05f)<1e-6,"eighth lane stereo pan");
+            lanes[7].mute=true;render(false);check(mix.getMagnitude(0,48)==0,"muted solo produces silence");
+            lanes[7].mute=false;render(true);arrangement.begin();mix.clear();arrangement.render(mix,48000);check(arrangement.playing.load()&&mix.getSample(1,10)>.04f,"eight-track loop crosses boundary");
+            lanes[7].solo=false;for(auto& lane:lanes)lane.gain=100;render(false);check(mix.getMagnitude(0,48)<=1,"eight-track mix clipping protection");
+        }
         WingmanProcessor p; p.prepareToPlay(48000,512);
         juce::AudioBuffer<float> input(2,4800);
         for (int ch = 0; ch < 2; ++ch) for (int i = 0; i < 4800; ++i) input.setSample(ch,i,0.25f);
@@ -40,6 +56,23 @@ int main() {
             juce::WavAudioFormat format;
             std::unique_ptr<juce::AudioFormatWriter> writer(format.createWriterFor(new juce::FileOutputStream(source),48000,2,24,{},0));
             check(writer && writer->writeFromAudioSampleBuffer(input,0,4800),"create WAV fixture");
+        }
+        {
+            wingman::studio::Project project;project.sources[7]=source;project.loop=true;project.tracks[7].pan=.3f;project.tracks[7].gain=.6f;project.tracks[7].solo=true;
+            check(wingman::studio::decode(source,project.tracks[7].clip).wasOk(),"studio decoder reads audio fixture");
+            const auto bounced=directory.getChildFile("studio-mix.wav");
+            check(wingman::studio::renderMix(bounced,project.tracks,[]{return false;}).wasOk(),"studio offline bounce succeeds");
+            {juce::WavAudioFormat wav;std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(bounced.createInputStream().release(),true));check(reader&&reader->bitsPerSample==24&&reader->numChannels==2&&reader->sampleRate==48000&&reader->lengthInSamples==4800,"studio bounce readable PCM24 stereo with exact duration");juce::AudioBuffer<float> audio(2,4800);check(reader->read(&audio,0,4800,0,true,true)&&std::abs(audio.getSample(0,10)-.105f)<1e-5&&std::abs(audio.getSample(1,10)-.15f)<1e-5,"studio bounce preserves gain, pan and audible samples");}
+            juce::MemoryBlock before,after;bounced.loadFileAsData(before);
+            check(wingman::studio::renderMix(bounced,project.tracks,[]{return true;}).failed(),"studio bounce cancellation reports failure");bounced.loadFileAsData(after);check(before==after,"cancelled bounce preserves previous destination");
+            const auto session=directory.getChildFile("arrangement.jaspro");
+            check(wingman::studio::save(session,project).wasOk(),"studio project saves atomically");
+            wingman::studio::Project restored;check(wingman::studio::load(session,restored,[]{return false;}).wasOk(),"studio project reopens");
+            check(restored.loop&&restored.tracks[7].solo&&std::abs(restored.tracks[7].gain-.6f)<1e-6&&restored.tracks[7].clip->audio.getNumSamples()==4800,"studio project restores eighth lane asset, mix and loop");
+            project.sources[7]=directory.getChildFile("absent.wav");check(wingman::studio::save(session,project).wasOk(),"save missing asset reference fixture");
+            auto previous=restored.tracks[7].clip;check(wingman::studio::load(session,restored,[]{return false;}).failed()&&restored.tracks[7].clip==previous,"failed missing-file restore preserves current project");
+            check(wingman::studio::load(session,restored,[]{return true;}).failed(),"project restore cancellation");
+            session.replaceWithText("not XML");check(wingman::studio::load(session,restored,[]{return false;}).failed(),"studio rejects corrupt project");
         }
         check(p.importWav(0,source).wasOk(),"import valid WAV");
         p.prepareTrackDrag(0);juce::File dragAudio;
@@ -261,6 +294,11 @@ int main() {
         wingman::ModelPanel modelPanel(p.modelConfig(),[&](const auto& runtime,const auto& models){p.configureModel(runtime,models);},
             [&](const auto& action,const auto& input,bool consent){return p.startModelJob(action,input,consent);},[&]{p.cancelModelJob();},[&]{return p.modelJobStatus();});
         check(modelPanel.createComponentSnapshot(modelPanel.getLocalBounds()).isValid(),"model manager renders");
+        {juce::String runtimePath,modelPath;bool invoked=false;
+         wingman::ModelPanel trimmed({" /tmp/runtime path/python  "," /tmp/models  "},[&](const auto& runtime,const auto& models){runtimePath=runtime;modelPath=models;},[&](const auto&,const auto&,bool){invoked=true;return juce::Result::ok();},[]{},[]{return wingman::ModelJobInfo{};});
+         for(auto* child:trimmed.getChildren())if(auto* button=dynamic_cast<juce::TextButton*>(child))if(button->getButtonText()=="Verify local model")button->onClick();
+         check(invoked&&runtimePath=="/tmp/runtime path/python"&&modelPath=="/tmp/models","model panel trims boundary whitespace while preserving internal path spaces");}
+
         p.setSessionName("Portable test session"); juce::MemoryBlock namedState;p.getStateInformation(namedState);restored.setStateInformation(namedState.getData(),static_cast<int>(namedState.getSize()));
         check(restored.sessionName()=="Portable test session","project name persists");
         if(const auto* modelsPath=std::getenv("WINGMAN_REAL_MODELS")) {

@@ -20,6 +20,7 @@ class ModelPanel final : public juce::Component,private juce::Timer {
         check.setEnabled(!job.running);install.setEnabled(!job.running);separate.setEnabled(!job.running);cancel.setEnabled(job.running);
     }
     void run(const juce::String& action,const juce::File& input={}) {
+        python.setText(python.getText().trim(),false);models.setText(models.getText().trim(),false);
         configure(python.getText(),models.getText());
         localError.clear();
         const auto result=start(action,input,consent.getToggleState());

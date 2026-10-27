@@ -12,8 +12,8 @@
 #include <limits>
 namespace wingman {
 // One audio reader, serialized non-audio writers. Reclamation occurs only on writers.
-class PlaybackEngine {
-    struct Snapshot {std::array<Track,5> tracks;bool loop=false;double length=0;std::shared_ptr<const SampledGuitar> library;bool sampledPreview=false;double curve=1;int articulation=24;std::uint64_t libraryRevision=0;bool generated=false;juce::MidiMessageSequence sequence;double sequenceLength=0,tempo=120;std::uint64_t midiRevision=0;bool basicPreview=false;double pickNoise=0,fretNoise=0,resonance=0;};
+template<std::size_t TrackCount> class BasicPlaybackEngine {
+    struct Snapshot {std::array<Track,TrackCount> tracks;bool loop=false;double length=0;std::shared_ptr<const SampledGuitar> library;bool sampledPreview=false;double curve=1;int articulation=24;std::uint64_t libraryRevision=0;bool generated=false;juce::MidiMessageSequence sequence;double sequenceLength=0,tempo=120;std::uint64_t midiRevision=0;bool basicPreview=false;double pickNoise=0,fretNoise=0,resonance=0;};
     SampleVoices sampleVoices;
     RealtimeSchedule midiSchedule;
     std::optional<HostFrame> frame;
@@ -30,8 +30,8 @@ public:
     std::atomic<int> unmappedSamples{0};
     std::atomic<bool> resetSampleNotes{false};
     std::atomic<bool> playing{false};
-    PlaybackEngine(){publish({},false);}
-    void publish(const std::array<Track,5>& tracks,bool loop,std::shared_ptr<const SampledGuitar> library={},bool sampledPreview=false,double curve=1,int articulation=24,std::uint64_t revision=0,bool generated=false,const juce::MidiMessageSequence& sequence={},double sequenceLength=0,double tempo=120,std::uint64_t midiRevision=0,bool basicPreview=false,double pickNoise=0,double fretNoise=0,double resonance=0){
+    BasicPlaybackEngine(){publish({},false);}
+    void publish(const std::array<Track,TrackCount>& tracks,bool loop,std::shared_ptr<const SampledGuitar> library={},bool sampledPreview=false,double curve=1,int articulation=24,std::uint64_t revision=0,bool generated=false,const juce::MidiMessageSequence& sequence={},double sequenceLength=0,double tempo=120,std::uint64_t midiRevision=0,bool basicPreview=false,double pickNoise=0,double fretNoise=0,double resonance=0){
         auto next=std::make_unique<Snapshot>();next->tracks=tracks;next->loop=loop;next->library=std::move(library);next->sampledPreview=sampledPreview;next->curve=curve;next->articulation=articulation;next->libraryRevision=revision;next->generated=generated;next->sequence=sequence;next->sequenceLength=sequenceLength;next->tempo=tempo;next->midiRevision=midiRevision;next->basicPreview=basicPreview;next->pickNoise=pickNoise;next->fretNoise=fretNoise;next->resonance=resonance;
         for(const auto& t:tracks)if(t.clip)next->length=std::max(next->length,t.clip->audio.getNumSamples()/t.clip->sampleRate);
         auto* pointer=next.get();retained.push_back(std::move(next));current.store(pointer);
@@ -68,4 +68,6 @@ public:
         hazard.store(nullptr);
     }
 };
+using PlaybackEngine = BasicPlaybackEngine<5>;
+using ArrangementPlaybackEngine = BasicPlaybackEngine<8>;
 }

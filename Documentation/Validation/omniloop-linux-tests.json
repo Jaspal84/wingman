@@ -1,0 +1,123 @@
+{
+  "branch": "development/omniloop-eight",
+  "platform": "Linux x86_64",
+  "build": "Debug / JUCE 8.0.6 / GCC 14.2",
+  "tests": 20,
+  "failures": 0,
+  "elapsed_seconds": 25.34,
+  "artifacts": {
+    "studio": {
+      "path": "build/JasProStudio_artefacts/Debug/Jas PRO Ultimate Loop Studio",
+      "sha256": "c108f6b58eb4be8227b36cd6a86c3559f0cace942b2730a232180fdaf37f17a7"
+    },
+    "legacy_standalone": {
+      "path": "build/Wingman_artefacts/Debug/Standalone/JASWINGMAN PRO",
+      "sha256": "b6f71280bcf77a9c13ac7b38958ba27235517432eb01a2c5e75e5727791f02cc"
+    },
+    "legacy_vst3": {
+      "path": "build/Wingman_artefacts/Debug/VST3/JASWINGMAN PRO.vst3/Contents/x86_64-linux/JASWINGMAN PRO.so",
+      "sha256": "d283f5837320fc4202c751384c561cf6349fe837488df6a1a30992960395050c"
+    }
+  },
+  "suites": [
+    {
+      "name": "stem_validation",
+      "seconds": 0.778233
+    },
+    {
+      "name": "guitar_license_manifest",
+      "seconds": 0.229828
+    },
+    {
+      "name": "standalone_install",
+      "seconds": 0.309683
+    },
+    {
+      "name": "standalone_migration",
+      "seconds": 0.416276
+    },
+    {
+      "name": "au_metadata",
+      "seconds": 0.312015
+    },
+    {
+      "name": "model_worker",
+      "seconds": 0.173128
+    },
+    {
+      "name": "guitar_performance",
+      "seconds": 0.394622
+    },
+    {
+      "name": "song_guitar",
+      "seconds": 0.0193809
+    },
+    {
+      "name": "guitar",
+      "seconds": 0.0839837
+    },
+    {
+      "name": "guitar_audio",
+      "seconds": 0.719421
+    },
+    {
+      "name": "tempo",
+      "seconds": 0.163589
+    },
+    {
+      "name": "advanced_chords",
+      "seconds": 0.0392445
+    },
+    {
+      "name": "dsp",
+      "seconds": 0.0190114
+    },
+    {
+      "name": "harmony",
+      "seconds": 16.2877
+    },
+    {
+      "name": "generation",
+      "seconds": 0.150847
+    },
+    {
+      "name": "transport",
+      "seconds": 0.00538776
+    },
+    {
+      "name": "studio_gui",
+      "seconds": 0.418572
+    },
+    {
+      "name": "guitar_realtime",
+      "seconds": 0.0404989
+    },
+    {
+      "name": "sampled_guitar",
+      "seconds": 0.114875
+    },
+    {
+      "name": "integration",
+      "seconds": 4.6455
+    }
+  ],
+  "new_verified_behaviour": [
+    "Eight-lane mixing, resampling, stereo, mute, solo, pan, loop and clipping bounds",
+    "Versioned source-reference project save/reopen and missing-file/cancellation rejection",
+    "48 kHz stereo PCM24 WAV duration and sample values; cancelled export preserves destination",
+    "Studio painting/control bounds at 1000x650, 1200x760 and 2400x1500; logged JUCE assertions fail the GUI self-test",
+    "Model Manager strips boundary whitespace without changing embedded path spaces"
+  ],
+  "not_executed": [
+    "macOS builds and CoreAudio audition",
+    "AU validation on the new build",
+    "Logic Pro and MainStage host tests and external drags",
+    "M1 performance measurements",
+    "Real HTDemucs inference on this change"
+  ],
+  "environment_notes": [
+    "No ALSA MIDI sequencer hardware in cloud environment",
+    "Fontconfig reports no writable cache directories; offscreen rendering passed"
+  ],
+  "scope": "Initial standalone playback milestone only; full workstation acceptance is not complete"
+}
