@@ -1,5 +1,10 @@
 # Milestone A: editable eight-track arrangement
 
+**Historical milestone:** see [current product workflows](PRODUCT-WORKFLOWS.md)
+and [feature matrix](PRODUCT-PARITY.md) for the later v3 project, library, generator,
+instrument, effects and optional Supabase additions. The original baseline below
+is retained for reference; its remaining-work list describes that earlier milestone.
+
 This branch extends the separate Jas PRO standalone. JASWINGMAN PRO source,
 plugin identifiers, session format and five-track engine are unchanged. This is
 an initial editing milestone, not a finished production workstation.

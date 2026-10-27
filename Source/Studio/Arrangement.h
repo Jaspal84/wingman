@@ -1,5 +1,6 @@
 #pragma once
 #include "Audio/Track.h"
+#include "Effects.h"
 #include <juce_data_structures/juce_data_structures.h>
 #include <atomic>
 #include <functional>
@@ -78,18 +79,21 @@ struct Region {
     std::shared_ptr<const Asset> asset;
     double beat = 0, offset = 0, duration = 0;
     float gain = 1;
-    double fadeIn = 0, fadeOut = 0;
+    double fadeIn = 0, fadeOut = 0, speed = 1;
+    bool reverse = false;
 };
-struct Lane { std::vector<Region> clips; float gain = .8f, pan = 0; bool mute = false, solo = false; };
+struct Lane { std::vector<Region> clips; float gain = .8f, pan = 0; bool mute = false, solo = false; Effects effects; };
 struct Arrangement {
     std::array<Lane, 8> lanes;
     double bpm = 120, loopStart = 0, loopEnd = 16;
     bool loop = false;
+    juce::String instrumentPreset;
     double secondsPerBeat() const { return 60 / bpm; }
     double end() const {
         double value = 0;
         for (const auto& lane : lanes) for (const auto& c : lane.clips)
             value = std::max(value, c.beat * secondsPerBeat() + c.duration);
+        if (value > 0) for (const auto& lane : lanes) if (lane.effects.enabled[1] || lane.effects.enabled[3] || lane.effects.enabled[7] || lane.effects.enabled[8]) return value + 2;
         return value;
     }
     Region* find(const juce::String& id) {
@@ -100,7 +104,7 @@ struct Arrangement {
 inline bool valid(const Region& c) {
     return c.asset && !c.id.isEmpty() && std::isfinite(c.beat) && c.beat >= 0 && c.beat <= 1000000 &&
         std::isfinite(c.offset) && c.offset >= 0 && std::isfinite(c.duration) && c.duration > 0 &&
-        c.offset + c.duration <= c.asset->seconds() + 1e-6 &&
+        std::isfinite(c.speed) && c.speed >= .25 && c.speed <= 4 && c.offset + c.duration * c.speed <= c.asset->seconds() + 1e-6 &&
         std::isfinite(c.gain) && c.gain >= 0 && c.gain <= 2 && std::isfinite(c.fadeIn) &&
         std::isfinite(c.fadeOut) && c.fadeIn >= 0 && c.fadeOut >= 0 && c.fadeIn <= c.duration && c.fadeOut <= c.duration;
 }
@@ -141,9 +145,11 @@ public:
         double seconds = (beat - c->beat) * state.secondsPerBeat();
         if (seconds < .001 || seconds > c->duration - .001) return false;
         auto before = state; Region right = *c; right.id = juce::Uuid().toString();
-        right.beat = beat; right.offset += seconds; right.duration -= seconds;
+        right.beat = beat; right.offset += seconds * c->speed; right.duration -= seconds;
+        if (c->reverse) { right.offset = c->offset; }
         right.fadeIn = 0; right.fadeOut = std::min(right.fadeOut, right.duration);
         for (auto& lane : state.lanes) for (auto& left : lane.clips) if (left.id == id) {
+            if (left.reverse) left.offset += (left.duration - seconds) * left.speed;
             left.duration = seconds; left.fadeOut = 0; left.fadeIn = std::min(left.fadeIn, seconds);
             lane.clips.push_back(std::move(right)); commit(before); return true;
         }
@@ -151,7 +157,8 @@ public:
     }
     bool trim(const juce::String& id, double leftSeconds, double rightSeconds) {
         auto* c = state.find(id); if (!c) return false; Region next = *c;
-        next.beat += leftSeconds / state.secondsPerBeat(); next.offset += leftSeconds;
+        next.beat += leftSeconds / state.secondsPerBeat();
+        next.offset += (next.reverse ? -rightSeconds : leftSeconds) * next.speed;
         next.duration += rightSeconds - leftSeconds;
         next.fadeIn = std::min(next.fadeIn, next.duration); next.fadeOut = std::min(next.fadeOut, next.duration);
         if (!valid(next)) return false; auto before = state; *c = next; commit(before); return true;
@@ -163,7 +170,10 @@ class TimelineEngine {
     std::vector<std::unique_ptr<Arrangement>> retained;
     std::atomic<double> requested{0}, visible{0};
     double cursor = 0;
+    std::array<EffectsProcessor, 8> processors;
 public:
+    std::array<std::atomic<float>, 8> meters{};
+    void prepare(double rate) { for (auto& processor : processors) processor.prepare(rate); }
     std::atomic<bool> playing{false};
     TimelineEngine() { publish({}); }
     void publish(const Arrangement& state) {
@@ -178,7 +188,9 @@ public:
         const Arrangement* a;
         do { a = current.load(); hazard.store(a); } while (current.load() != a);
         auto request = requested.exchange(std::numeric_limits<double>::quiet_NaN());
-        if (std::isfinite(request)) cursor = request;
+        if (std::isfinite(request)) { cursor = request; for (auto& processor : processors) processor.reset(); }
+        std::array<float, 8> peaks{};
+        for (std::size_t lane = 0; lane < 8; ++lane) processors[lane].configure(a->lanes[lane].effects);
         if (playing.load() && rate > 0) {
             bool solo = false; for (const auto& lane : a->lanes) solo |= lane.solo;
             const double end = a->end(), spb = a->secondsPerBeat();
@@ -187,23 +199,30 @@ public:
                 if (a->loop && loopEnd > loopStart && cursor >= loopEnd)
                     cursor = loopStart + std::fmod(cursor - loopStart, loopEnd - loopStart);
                 if (!a->loop && cursor >= end) { playing = false; break; }
-                for (const auto& lane : a->lanes) {
+                for (std::size_t laneIndex = 0; laneIndex < 8; ++laneIndex) {
+                    const auto& lane = a->lanes[laneIndex];
                     if (lane.mute || (solo && !lane.solo)) continue;
+                    float left = 0, right = 0;
                     for (const auto& c : lane.clips) {
                         const double local = cursor - c.beat * spb;
                         if (local < 0 || local >= c.duration || !c.asset) continue;
                         double envelope = 1;
                         if (c.fadeIn > 0) envelope *= std::min(1.0, local / c.fadeIn);
                         if (c.fadeOut > 0) envelope *= std::min(1.0, (c.duration - local) / c.fadeOut);
-                        for (int ch = 0; ch < output.getNumChannels(); ++ch)
-                            output.addSample(ch, i, c.asset->sample(ch, (c.offset + local) * c.asset->rate) *
-                                lane.gain * c.gain * static_cast<float>(envelope) * balanceGain(lane.pan, ch));
+                        double frame = c.reverse ? (c.offset + c.duration * c.speed) * c.asset->rate - 1 - local * c.speed * c.asset->rate : (c.offset + local * c.speed) * c.asset->rate;
+                        float gain = c.gain * static_cast<float>(envelope);
+                        left += c.asset->sample(0, frame) * gain; right += c.asset->sample(1, frame) * gain;
                     }
+                    processors[laneIndex].process(left, right, lane.effects, cursor / spb);
+                    left *= lane.gain * balanceGain(lane.pan, 0); right *= lane.gain * balanceGain(lane.pan, 1);
+                    peaks[laneIndex] = std::max(peaks[laneIndex], std::max(std::abs(left), std::abs(right)));
+                    if (output.getNumChannels() > 0) output.addSample(0, i, left);
+                    if (output.getNumChannels() > 1) output.addSample(1, i, right);
                 }
                 cursor += 1 / rate;
             }
         }
-        visible.store(cursor);
+        visible.store(cursor); for (std::size_t i = 0; i < 8; ++i) meters[i].store(peaks[i]);
         for (int c = 0; c < output.getNumChannels(); ++c) for (int i = 0; i < output.getNumSamples(); ++i) {
             float value = output.getSample(c, i); output.setSample(c, i, std::isfinite(value) ? std::clamp(value, -1.0f, 1.0f) : 0);
         }
@@ -213,16 +232,19 @@ public:
 inline juce::Result saveArrangement(const juce::File& file, const Arrangement& a) {
     for (const auto& lane : a.lanes) for (const auto& c : lane.clips)
         if (c.asset && c.asset->source == file) return juce::Result::fail("Cannot overwrite source audio with a project");
-    juce::ValueTree root("JasProProject"); root.setProperty("version", 2, nullptr);
+    juce::ValueTree root("JasProProject"); root.setProperty("version", 3, nullptr);
+    root.setProperty("instrument", a.instrumentPreset, nullptr);
     root.setProperty("bpm", a.bpm, nullptr); root.setProperty("loop", a.loop, nullptr);
     root.setProperty("loopStart", a.loopStart, nullptr); root.setProperty("loopEnd", a.loopEnd, nullptr);
     for (const auto& lane : a.lanes) {
         juce::ValueTree t("Track"); t.setProperty("gain", lane.gain, nullptr); t.setProperty("pan", lane.pan, nullptr);
         t.setProperty("mute", lane.mute, nullptr); t.setProperty("solo", lane.solo, nullptr);
+        juce::Array<juce::var> effects; for (std::size_t i = 0; i < 11; ++i) { effects.add(lane.effects.enabled[i]); effects.add(lane.effects.amount[i]); } t.setProperty("effects", juce::JSON::toString(effects, true), nullptr);
         for (const auto& c : lane.clips) {
             if (!valid(c)) return juce::Result::fail("Invalid clip");
             juce::ValueTree v("Clip"); v.setProperty("id", c.id, nullptr); v.setProperty("source", c.asset->source.getFullPathName(), nullptr);
             v.setProperty("beat", c.beat, nullptr); v.setProperty("offset", c.offset, nullptr); v.setProperty("duration", c.duration, nullptr);
+            v.setProperty("speed", c.speed, nullptr); v.setProperty("reverse", c.reverse, nullptr);
             v.setProperty("gain", c.gain, nullptr); v.setProperty("fadeIn", c.fadeIn, nullptr); v.setProperty("fadeOut", c.fadeOut, nullptr);
             t.addChild(v, -1, nullptr);
         }
@@ -235,10 +257,11 @@ inline juce::Result loadArrangement(const juce::File& file, Arrangement& destina
                                   const std::function<bool()>& cancelled = [] { return false; }) {
     if (!file.existsAsFile() || file.getSize() > 4 * 1024 * 1024) return juce::Result::fail("Missing or oversized project");
     auto root = juce::ValueTree::fromXml(file.loadFileAsString()); int version = root["version"];
-    if (!root.hasType("JasProProject") || (version != 1 && version != 2) || root.getNumChildren() != 8)
+    if (!root.hasType("JasProProject") || (version != 1 && version != 2 && version != 3) || root.getNumChildren() != 8)
         return juce::Result::fail("Invalid project version or tracks");
-    Arrangement next; next.loop = root["loop"];
-    if (version == 2) { next.bpm = root["bpm"]; next.loopStart = root["loopStart"]; next.loopEnd = root["loopEnd"]; }
+    Arrangement next; next.loop = root["loop"]; next.instrumentPreset = root["instrument"].toString();
+    if (next.instrumentPreset.getNumBytesAsUTF8() > 65536) return juce::Result::fail("Oversized instrument preset");
+    if (version >= 2) { next.bpm = root["bpm"]; next.loopStart = root["loopStart"]; next.loopEnd = root["loopEnd"]; }
     if (!std::isfinite(next.bpm) || next.bpm < 30 || next.bpm > 300 || !std::isfinite(next.loopStart) ||
         !std::isfinite(next.loopEnd) || next.loopStart < 0 || next.loopEnd <= next.loopStart || next.loopEnd > 1000000)
         return juce::Result::fail("Invalid tempo or loop region");
@@ -250,12 +273,16 @@ inline juce::Result loadArrangement(const juce::File& file, Arrangement& destina
         lane.gain = t["gain"]; lane.pan = t["pan"]; lane.mute = t["mute"]; lane.solo = t["solo"];
         if (!std::isfinite(lane.gain) || lane.gain < 0 || lane.gain > 1 || !std::isfinite(lane.pan) || std::abs(lane.pan) > 1)
             return juce::Result::fail("Invalid mixer");
+        if (version >= 3 && t.hasProperty("effects")) {
+            auto effects = juce::JSON::parse(t["effects"].toString()); auto* list = effects.getArray(); if (!list || list->size() != 22) return juce::Result::fail("Invalid effect state");
+            for (int fx = 0; fx < 11; ++fx) { lane.effects.enabled[static_cast<std::size_t>(fx)] = static_cast<bool>((*list)[fx * 2]); float amount = static_cast<float>((*list)[fx * 2 + 1]); if (!std::isfinite(amount) || amount < 0 || amount > 1) return juce::Result::fail("Invalid effect amount"); lane.effects.amount[static_cast<std::size_t>(fx)] = amount; }
+        }
         int children = version == 1 ? (t["source"].toString().isEmpty() ? 0 : 1) : t.getNumChildren();
         for (int j = 0; j < children; ++j) {
             if (cancelled()) return juce::Result::fail("Load cancelled");
             if (++count > Editor::maxClips) return juce::Result::fail("Project exceeds 512 clips");
             auto v = version == 1 ? t : t.getChild(j);
-            if (version == 2 && !v.hasType("Clip")) return juce::Result::fail("Invalid clip node");
+            if (version >= 2 && !v.hasType("Clip")) return juce::Result::fail("Invalid clip node");
             auto path = v["source"].toString();
             if (!juce::File::isAbsolutePath(path)) return juce::Result::fail("Source path must be absolute");
             auto key = path.toStdString();
@@ -264,8 +291,9 @@ inline juce::Result loadArrangement(const juce::File& file, Arrangement& destina
                 if (result.failed()) return result; assets[key] = std::move(asset);
             }
             Region c; c.asset = assets[key]; c.duration = c.asset->seconds();
-            if (version == 2) {
+            if (version >= 2) {
                 c.id = v["id"]; c.beat = v["beat"]; c.offset = v["offset"]; c.duration = v["duration"];
+                if (version >= 3) { c.speed = v["speed"]; c.reverse = v["reverse"]; }
                 c.gain = v["gain"]; c.fadeIn = v["fadeIn"]; c.fadeOut = v["fadeOut"];
             }
             if (!valid(c) || ids.contains(c.id)) return juce::Result::fail("Invalid or duplicate clip");

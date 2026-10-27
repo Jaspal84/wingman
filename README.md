@@ -145,6 +145,14 @@ A separate eight-track standalone target is under development, preserving the
 existing plugin. See [implementation status and Mac build commands](Documentation/OMNILOOP-IMPLEMENTATION.md).
 
 The standalone now has an editable multiclip timeline with undo/redo, beat snap,
-trims, fades, BPM, disk-backed imports and version-two arrangement files. See
+trims, fades, BPM and disk-backed imports. Current projects use version three,
+with backward loading for version-one/two arrangements. See
 [Timeline Milestone A](Documentation/TIMELINE-MILESTONE-A.md) for controls, exact
 M1 build/validation steps and remaining limitations.
+
+The 0.3 development checkpoint adds a local SQLite/FTS5 library, heuristic harmonic
+inspection, deterministic Inspire/Magic Arrange, Flip, initial Play/Drum, track
+effects and an optional Supabase client/schema. These are partial product modules;
+feature parity is not claimed. Start with [product workflows](Documentation/PRODUCT-WORKFLOWS.md),
+the [feature matrix](Documentation/PRODUCT-PARITY.md), [Supabase setup](Documentation/SUPABASE.md)
+and [native Mac packaging/validation](Documentation/STUDIO-MAC-DISTRIBUTION.md).
