@@ -12,6 +12,7 @@ class ProductionPanel final : public juce::Component {
     juce::TextEditor explanation;
     std::optional<Sample> referenceSample;
     std::vector<Region> lastSlices;
+    bool flipOnly = false;
 public:
     std::function<void(InspireSettings, bool, int)> onGenerate;
     std::function<void(FlipSettings, bool)> onFlip;
@@ -41,12 +42,21 @@ public:
     bool testControls() {
         bool generated = false, flipped = false; onGenerate = [&](const auto& s, bool, int) { generated = s.seed == 42 && s.bars == 8; }; onFlip = [&](const auto& s, bool) { flipped = s.slices == 8 && s.probability == 1; }; generate.onClick(); flipButton.onClick(); onGenerate = {}; onFlip = {}; return generated && flipped;
     }
+    void setFlipOnly(bool value) {
+        flipOnly = value; for (auto* c : std::initializer_list<juce::Component*>{&genre, &mode, &key, &regenerate, &mood, &seed, &energy, &bars, &generate, &magic, &regen, &progression, &guitar}) c->setVisible(!value);
+        title.setText(value ? "FLIP / EDIT REAL AUDIO SLICES" : "INSPIRE / MAGIC ARRANGE / FLIP - deterministic local audio", juce::dontSendNotification);
+        if (value) referenceLabel.setText("Select a clip in Arrangement, then slice, reorder, reverse and export trigger MIDI.", juce::dontSendNotification);
+        else referenceLabel.setText(referenceSample ? "Reference: " + juce::File(referenceSample->path).getFileName() + " | " + juce::String(referenceSample->bpm, 1) + " BPM | " + keyName(referenceSample->key, referenceSample->mode) : juce::String("Choose Use as reference in Settings / Sample metadata for Magic Arrange."), juce::dontSendNotification);
+        resized(); repaint();
+    }
     void setReference(const Sample& s) { referenceSample = s; magic.setEnabled(true); key.setSelectedId(s.key + 2); mode.setSelectedId(s.mode + 1); referenceLabel.setText("Reference: " + juce::File(s.path).getFileName() + " | " + juce::String(s.bpm, 1) + " BPM | " + keyName(s.key, s.mode) + " | correction in Library + Match", juce::dontSendNotification); }
     std::optional<Sample> reference() const { return referenceSample; }
     void report(const juce::String& text) { explanation.setText(text, false); }
     void setBusy(bool b) { for (auto* button : {&generate, &regen, &flipButton, &midi, &guitar}) button->setEnabled(!b); magic.setEnabled(!b && referenceSample.has_value()); }
     void resized() override {
-        int w = getWidth(); title.setBounds(20, 10, w - 40, 30); referenceLabel.setBounds(20, 45, w - 40, 28);
+        int w = getWidth();
+        if (flipOnly) { title.setBounds(20, 16, w - 40, 32); referenceLabel.setBounds(20, 57, w - 40, 30); slices.setBounds(20, 127, 140, 30); probability.setBounds(180, 127, 220, 30); swing.setBounds(420, 127, 220, 30); transient.setBounds(660, 127, w - 680, 30); reverse.setBounds(20, 177, 150, 30); flipButton.setBounds(185, 177, 225, 32); midi.setBounds(430, 177, 220, 32); explanation.setBounds(20, 244, w - 40, getHeight() - 264); return; }
+        title.setBounds(20, 10, w - 40, 30); referenceLabel.setBounds(20, 45, w - 40, 28);
         int cell = (w - 40) / 4; genre.setBounds(20, 100, cell - 10, 28); mood.setBounds(20 + cell, 100, cell - 10, 28); key.setBounds(20 + cell * 2, 100, cell - 10, 28); mode.setBounds(20 + cell * 3, 100, cell - 10, 28);
         energy.setBounds(20, 163, cell - 10, 28); bars.setBounds(20 + cell, 163, cell - 10, 28); seed.setBounds(20 + cell * 2, 163, cell - 10, 28); regenerate.setBounds(20 + cell * 3, 163, cell - 10, 28);
         generate.setBounds(20, 210, 230, 32); magic.setBounds(262, 210, 245, 32); regen.setBounds(519, 210, 220, 32);
@@ -56,7 +66,7 @@ public:
         explanation.setBounds(20, 430, w - 40, std::max(80, getHeight() - 450));
     }
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour(0xff151d29)); g.setColour(juce::Colours::lightgrey); g.setFont(13); int cell = (getWidth() - 40) / 4;
+        g.fillAll(juce::Colour(0xff151d29)); g.setColour(juce::Colours::lightgrey); g.setFont(13); if (flipOnly) { g.drawText("Probability", 180, 104, 210, 20, juce::Justification::left); g.drawText("Swing", 420, 104, 210, 20, juce::Justification::left); return; } int cell = (getWidth() - 40) / 4;
         const char* top[]{"Genre filter (user tag)", "Mood filter (user tag)", "Target key", "Mode"}; const char* bottom[]{"Energy (RMS preference)", "Arrangement bars (4/4)", "Reproducible seed", "Regeneration destination"};
         for (int i = 0; i < 4; ++i) { g.drawText(top[i], 20 + i * cell, 78, cell - 10, 20, juce::Justification::left); g.drawText(bottom[i], 20 + i * cell, 140, cell - 10, 20, juce::Justification::left); }
         g.drawText("FLIP / original seeded slice order, probability and swing", 20, 293, getWidth() - 40, 28, juce::Justification::left);

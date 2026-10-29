@@ -156,3 +156,10 @@ effects and an optional Supabase client/schema. These are partial product module
 feature parity is not claimed. Start with [product workflows](Documentation/PRODUCT-WORKFLOWS.md),
 the [feature matrix](Documentation/PRODUCT-PARITY.md), [Supabase setup](Documentation/SUPABASE.md)
 and [native Mac packaging/validation](Documentation/STUDIO-MAC-DISTRIBUTION.md).
+
+The 0.4 default is a functional three-column Library / Discovery / AI Create workspace,
+with lockable musical layers and separate editor/tool tabs. See the [current workspace
+and M1 instructions](Documentation/CREATE-WORKSPACE.md). It uses real indexed local
+audio and preserves existing projects and plugin identifiers.
+
+Native M1 AU build, installation, validation commands and required Logic Pro checks: [MacBook M1 validation](Documentation/MACBOOK-M1-VALIDATION.md).

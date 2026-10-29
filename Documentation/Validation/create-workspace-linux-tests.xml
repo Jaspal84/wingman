@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Linux-c++"
+	tests="24"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname="affed35b8ced"
+	time="26"
+	timestamp="2026-10-29T01:57:36"
+	>
+	<testcase name="supabase_rls" classname="supabase_rls" time="0.697444" status="run">
+		<properties/>
+		<system-out>CREATE ROLE
+CREATE ROLE
+CREATE SCHEMA
+CREATE TABLE
+INSERT 0 2
+CREATE FUNCTION
+GRANT
+GRANT
+CREATE SCHEMA
+CREATE TABLE
+CREATE TABLE
+ALTER TABLE
+CREATE FUNCTION
+GRANT
+GRANT
+GRANT
+GRANT
+INSERT 0 1
+BEGIN
+CREATE TABLE
+ALTER TABLE
+psql:/workspace/wingman/Supabase/migrations/0001_library_sync.sql:13: NOTICE:  policy "metadata_owner_select" for relation "public.sample_metadata" does not exist, skipping
+DROP POLICY
+CREATE POLICY
+REVOKE
+GRANT
+CREATE INDEX
+CREATE FUNCTION
+REVOKE
+GRANT
+INSERT 0 1
+psql:/workspace/wingman/Supabase/migrations/0001_library_sync.sql:48: NOTICE:  policy "jaspro_audio_select" for relation "storage.objects" does not exist, skipping
+DROP POLICY
+CREATE POLICY
+psql:/workspace/wingman/Supabase/migrations/0001_library_sync.sql:51: NOTICE:  policy "jaspro_audio_insert" for relation "storage.objects" does not exist, skipping
+DROP POLICY
+CREATE POLICY
+psql:/workspace/wingman/Supabase/migrations/0001_library_sync.sql:54: NOTICE:  policy "jaspro_audio_delete" for relation "storage.objects" does not exist, ...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+	<testcase name="guitar_license_manifest" classname="guitar_license_manifest" time="0.0723236" status="run">
+		<properties/>
+		<system-out>..
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+</system-out>
+	</testcase>
+	<testcase name="standalone_install" classname="standalone_install" time="0.0742559" status="run">
+		<properties/>
+		<system-out>..
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+</system-out>
+	</testcase>
+	<testcase name="standalone_migration" classname="standalone_migration" time="0.064158" status="run">
+		<properties/>
+		<system-out>....
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK
+</system-out>
+	</testcase>
+	<testcase name="au_metadata" classname="au_metadata" time="0.0822671" status="run">
+		<properties/>
+		<system-out>......
+----------------------------------------------------------------------
+Ran 6 tests in 0.003s
+
+OK
+</system-out>
+	</testcase>
+	<testcase name="model_worker" classname="model_worker" time="0.0683133" status="run">
+		<properties/>
+		<system-out>.........{"state": "running", "progress": 0.5}
+{"state": "cancelled", "progress": 0}
+...
+----------------------------------------------------------------------
+Ran 12 tests in 0.002s
+
+OK
+</system-out>
+	</testcase>
+	<testcase name="guitar_performance" classname="guitar_performance" time="0.113525" status="run">
+		<properties/>
+		<system-out>2132 tuning/capo/playability/strum checks passed
+</system-out>
+	</testcase>
+	<testcase name="song_guitar" classname="song_guitar" time="0.0071316" status="run">
+		<properties/>
+		<system-out>41 timeline-aligned guitar checks passed
+</system-out>
+	</testcase>
+	<testcase name="guitar" classname="guitar" time="0.0305593" status="run">
+		<properties/>
+		<system-out>326 guitar generation/render checks passed
+</system-out>
+	</testcase>
+	<testcase name="guitar_audio" classname="guitar_audio" time="0.235957" status="run">
+		<properties/>
+		<system-out>773887 guitar generation/render checks passed
+</system-out>
+	</testcase>
+	<testcase name="tempo" classname="tempo" time="0.0860124" status="run">
+		<properties/>
+		<system-out>27 tempo tests passed
+</system-out>
+	</testcase>
+	<testcase name="advanced_chords" classname="advanced_chords" time="0.0311728" status="run">
+		<properties/>
+		<system-out>1148 advanced chord tests passed
+</system-out>
+	</testcase>
+	<testcase name="dsp" classname="dsp" time="0.0102845" status="run">
+		<properties/>
+		<system-out>15 DSP checks passed
+</system-out>
+	</testcase>
+	<testcase name="harmony" classname="harmony" time="13.4712" status="run">
+		<properties/>
+		<system-out>Synthetic held-chord accuracy: 96/96
+Synthetic cadence key accuracy: 24/24
+108 harmony checks passed
+</system-out>
+	</testcase>
+	<testcase name="generation" classname="generation" time="0.0829557" status="run">
+		<properties/>
+		<system-out>32708 music checks passed
+</system-out>
+	</testcase>
+	<testcase name="transport" classname="transport" time="0.00234085" status="run">
+		<properties/>
+		<system-out>13 transport checks passed
+</system-out>
+	</testcase>
+	<testcase name="studio_gui" classname="studio_gui" time="3.60256" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+ALSA lib seq_hw.c:540:(snd_seq_hw_open) open /dev/snd/seq failed: No such file or directory
+GUI edit workflow passed (synthetic audio fixture)
+GUI self-test: PASS
+</system-out>
+	</testcase>
+	<testcase name="create_gui" classname="create_gui" time="1.80161" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+CREATE GUI workflow: PASS
+</system-out>
+	</testcase>
+	<testcase name="arrangement" classname="arrangement" time="0.300213" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+79 arrangement assertions passed
+</system-out>
+	</testcase>
+	<testcase name="studio_workflows" classname="studio_workflows" time="1.40922" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+360 offline studio and mocked-cloud assertions passed
+</system-out>
+	</testcase>
+	<testcase name="create_combinations" classname="create_combinations" time="1.31377" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+109 Create composition, discovery and export assertions passed
+</system-out>
+	</testcase>
+	<testcase name="guitar_realtime" classname="guitar_realtime" time="0.0380498" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+519 polyphony/voice-steal/C++ allocation checks passed
+</system-out>
+	</testcase>
+	<testcase name="sampled_guitar" classname="sampled_guitar" time="0.0934038" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+549 sampled guitar checks passed
+</system-out>
+	</testcase>
+	<testcase name="integration" classname="integration" time="3.02002" status="run">
+		<properties/>
+		<system-out>JUCE v8.0.6
+Real-inference integration not requested (WINGMAN_REAL_MODELS unset).
+1444 integration checks passed
+</system-out>
+	</testcase>
+</testsuite>

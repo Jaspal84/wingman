@@ -12,7 +12,7 @@ Library::Library(const juce::File& file) {
         Statement version(db, "PRAGMA user_version"); version.step();
         int schema = sqlite3_column_int(version.p, 0);
         if (schema > 2) throw std::runtime_error("Library schema is newer than this application");
-        exec("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS samples("
+        if (schema == 0) exec("BEGIN IMMEDIATE; CREATE TABLE IF NOT EXISTS samples("
              "id INTEGER PRIMARY KEY,path TEXT NOT NULL UNIQUE,size INTEGER NOT NULL,mtime INTEGER NOT NULL,hash TEXT NOT NULL,"
              "duration REAL NOT NULL,channels INTEGER NOT NULL,bpm REAL NOT NULL,tempoConfidence REAL NOT NULL,keyRoot INTEGER NOT NULL,mode INTEGER NOT NULL,keyConfidence REAL NOT NULL,"
              "rms REAL NOT NULL,brightness REAL NOT NULL,waveform TEXT NOT NULL,onsets TEXT NOT NULL,chords TEXT NOT NULL,"
@@ -25,7 +25,8 @@ Library::Library(const juce::File& file) {
              "CREATE TRIGGER IF NOT EXISTS samples_ad AFTER DELETE ON samples BEGIN INSERT INTO samples_fts(samples_fts,rowid,path,instrument,genre,mood,collection) VALUES('delete',old.id,old.path,old.instrument,old.genre,old.mood,old.collection); END;"
              "CREATE TRIGGER IF NOT EXISTS samples_au AFTER UPDATE ON samples BEGIN INSERT INTO samples_fts(samples_fts,rowid,path,instrument,genre,mood,collection) VALUES('delete',old.id,old.path,old.instrument,old.genre,old.mood,old.collection); INSERT INTO samples_fts(rowid,path,instrument,genre,mood,collection) VALUES(new.id,new.path,new.instrument,new.genre,new.mood,new.collection); END;"
              "INSERT INTO samples_fts(samples_fts) VALUES('rebuild'); PRAGMA user_version=2; COMMIT;");
-        else exec("PRAGMA user_version=2");
+        // Additive side table; the existing v2 sample/FTS schema remains readable.
+        exec("CREATE TABLE IF NOT EXISTS library_folders(path TEXT PRIMARY KEY NOT NULL)");
     } catch (...) { sqlite3_close(db); db = nullptr; throw; }
 }
 Sample Library::read(sqlite3_stmt* p) {
@@ -101,6 +102,7 @@ Sample Library::index(const juce::File& file, const Cancel& cancelled) {
 }
 ScanResult Library::scan(const juce::File& folder, const Cancel& cancelled, const std::function<void(int)>& progress) {
     ScanResult result; if (!folder.isDirectory()) { result.error = "Not a folder"; return result; }
+    { Statement root(db, "INSERT OR IGNORE INTO library_folders(path) VALUES(?)"); root.text(1, folder.getFullPathName()); root.step(); }
     for (const auto& entry : juce::RangedDirectoryIterator(folder, true, "*", juce::File::findFiles, juce::File::FollowSymlinks::no)) {
         if (cancelled()) { result.cancelled = true; break; }
         auto file = entry.getFile(); if (!file.hasFileExtension("wav;aif;aiff;flac")) continue;
@@ -125,6 +127,13 @@ std::vector<Sample> Library::search(const Query& query) {
     }
     for (auto pair : {std::pair<const char*, juce::String>{"instrument", query.instrument}, {"genre", query.genre}, {"mood", query.mood}, {"collection", query.collection}})
         if (pair.second.isNotEmpty()) { sql += " AND " + juce::String(pair.first) + "=? COLLATE NOCASE"; parameters.push_back(pair.second); }
+    const juce::String drums = "(lower(instrument) LIKE '%drum%' OR lower(instrument) LIKE '%kick%' OR lower(instrument) LIKE '%snare%' OR lower(instrument) LIKE '%hat%' OR lower(instrument) LIKE '%perc%' OR lower(instrument) LIKE '%dhol%' OR lower(instrument) LIKE '%tabla%' OR lower(instrument) LIKE '%clap%')";
+    if (query.category == LibraryCategory::DrumLoops) sql += " AND duration>=0.8 AND " + drums;
+    if (query.category == LibraryCategory::OneShots) sql += " AND duration<0.8";
+    if (query.category == LibraryCategory::Vocals) sql += " AND (lower(instrument) LIKE '%vocal%' OR lower(instrument) LIKE '%voice%')";
+    if (query.category == LibraryCategory::Instruments) sql += " AND instrument<>'' AND NOT " + drums + " AND lower(instrument) NOT LIKE '%vocal%' AND lower(instrument) NOT LIKE '%voice%' AND lower(instrument) NOT LIKE '%fx%'";
+    if (query.folder.isNotEmpty()) { auto prefix = juce::File(query.folder).getFullPathName(); if (!prefix.endsWith(juce::File::getSeparatorString())) prefix += juce::File::getSeparatorString(); sql += " AND substr(path,1,length(?))=?"; parameters.push_back(prefix); parameters.push_back(prefix); }
+    if (query.collected) sql += " AND collection<>''";
     if (query.favorites) sql += " AND favorite=1";
     if (query.duplicates) sql += " AND hash IN (SELECT hash FROM samples GROUP BY hash HAVING COUNT(*)>1)";
     if (query.bpm > 0) sql += " AND abs(bpm-?)<=?";
@@ -148,4 +157,10 @@ void Library::annotate(int64_t id, const juce::String& instrument, const juce::S
     q.text(1, instrument.trim().substring(0, 128)); q.text(2, genre.trim().substring(0, 128)); q.text(3, mood.trim().substring(0, 128)); q.text(4, collection.trim().substring(0, 128));
     q.integer(5, favorite); q.number(6, bpm); q.integer(7, key); q.integer(8, mode); q.integer(9, id); q.step(); if (sqlite3_changes(db) != 1) throw std::runtime_error("Sample no longer exists");
 }
+}
+
+namespace wingman::studio {
+void Library::setFavorite(int64_t id, bool value) { Statement q(db, "UPDATE samples SET favorite=? WHERE id=?"); q.integer(1, value); q.integer(2, id); q.step(); if (sqlite3_changes(db) != 1) throw std::runtime_error("Sample not found"); }
+juce::StringArray Library::collections() { juce::StringArray result; Statement q(db, "SELECT DISTINCT collection FROM samples WHERE collection<>'' ORDER BY collection COLLATE NOCASE"); while (q.step() == SQLITE_ROW) result.add(text(q.p, 0)); return result; }
+juce::StringArray Library::folders() { juce::StringArray result; Statement q(db, "SELECT path FROM library_folders ORDER BY path COLLATE NOCASE"); while (q.step() == SQLITE_ROW) result.add(text(q.p, 0)); if (result.isEmpty()) { Statement paths(db, "SELECT path FROM samples ORDER BY path"); while (paths.step() == SQLITE_ROW) result.addIfNotAlreadyThere(juce::File(text(paths.p, 0)).getParentDirectory().getFullPathName()); } return result; }
 }

@@ -18,11 +18,13 @@ struct Sample {
     std::vector<float> waveform;
     std::vector<double> onsets;
 };
+enum class LibraryCategory { All, DrumLoops, OneShots, Instruments, Vocals };
 struct Query {
-    juce::String text, instrument, genre, mood, collection;
+    juce::String text, instrument, genre, mood, collection, folder;
+    LibraryCategory category = LibraryCategory::All;
     double bpm = 0, tolerance = 6;
     int key = -1, mode = -1;
-    bool favorites = false, duplicates = false;
+    bool favorites = false, duplicates = false, collected = false;
     int limit = 500, offset = 0;
 };
 struct ScanResult { int indexed = 0, unchanged = 0, rejected = 0; bool cancelled = false; juce::String error; };
@@ -53,6 +55,9 @@ public:
     Sample get(int64_t id);
     void annotate(int64_t id, const juce::String& instrument, const juce::String& genre, const juce::String& mood, const juce::String& collection, bool favorite, double bpm, int key, int mode);
     int count();
+    void setFavorite(int64_t id, bool value);
+    juce::StringArray collections();
+    juce::StringArray folders();
     static Sample analyse(const juce::File&, const Cancel&);
 };
 inline juce::String keyName(int key, int mode) {

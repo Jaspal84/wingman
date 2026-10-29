@@ -105,3 +105,12 @@ SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY remain unset until the owner creates a
 project. See `SUPABASE.md` for deployment and RLS acceptance. No service-role key
 belongs in a desktop app. `PRODUCT-WORKFLOWS.md` documents exact UI behavior and
 limits; `STUDIO-MAC-DISTRIBUTION.md` documents native packaging/validation.
+
+## 0.4 interface checkpoint
+
+`CREATE-WORKSPACE.md` supersedes the earlier default navigation: functional Library,
+Discovery and AI Create columns; explicit eight musical roles; exact layer locks and
+replacement; direct editor/WAV/sample-trigger MIDI transfer; separate Arrangement,
+Flip, Play, Drum, Effects, Mixer and Settings tabs. The underlying unfinished product
+modules and hardware/cloud validation requirements above remain unfinished. The UI
+uses no proprietary reference assets or catalogue.

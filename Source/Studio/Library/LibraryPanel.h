@@ -45,7 +45,7 @@ class LibraryPanel final : public juce::Component, private juce::ListBoxModel, p
             tempo.setText(juce::String(s.bpm, 2)); key.setSelectedId(s.key + 2); mode.setSelectedId(s.mode + 1); favorite.setToggleState(s.favorite, juce::dontSendNotification);
             details.setText("USER METADATA / Corrections override detected values", juce::dontSendNotification);
             analysis.setText("Analysis: first 30 seconds (heuristic)\nTempo confidence: " + juce::String(s.tempoConfidence, 2) + (s.manualTempo ? " [manual BPM]" : "") + "\nKey confidence: " + juce::String(s.keyConfidence, 2) + (s.manualKey ? " [manual key]" : "") + "\nRMS: " + juce::String(s.rms, 3) + " | zero-crossing ratio: " + juce::String(s.brightness, 4) + "\n\nChord estimates:\n" + (s.chords.isEmpty() ? juce::String("Unknown / insufficient harmonic evidence") : s.chords) + "\n\nSource:\n" + s.path + "\n\nSHA-256: " + s.hash, false);
-        } else analysis.clear(); repaint();
+        } else analysis.clear(); if (onSelectionChanged) onSelectionChanged(selected); repaint();
     }
     void refresh() {
         if (!library) return;
@@ -67,6 +67,7 @@ class LibraryPanel final : public juce::Component, private juce::ListBoxModel, p
 public:
     std::function<void(const Sample&, bool)> audition;
     std::function<void()> stopAudition;
+    std::function<void(const std::optional<Sample>&)> onSelectionChanged;
     std::function<void(const Sample&)> addToTrack, reference;
     explicit LibraryPanel(juce::File db = dataDirectory().getChildFile("library.sqlite")) : database(std::move(db)) {
         for (auto* c : std::initializer_list<juce::Component*>{&list, &status, &details, &analysis, &searchText, &instrument, &genre, &mood, &collection, &tempo, &key, &mode, &filterKey, &filterMode, &filterBpm, &favorites, &duplicates, &favorite, &matchTempo, &folder, &cancel, &preview, &stop, &insert, &save, &similar, &reset, &useReference, &drag, &previous, &next}) addAndMakeVisible(c);
@@ -100,6 +101,7 @@ public:
     }
     ~LibraryPanel() override { stopTimer(); worker.request_stop(); worker.join(); list.setModel(nullptr); }
     void refreshResults() { refresh(); }
+    void inspectSample(int64_t id) { if (!library) return; try { rows = {library->get(id)}; list.updateContent(); list.deselectAllRows(); list.selectRow(0); selectedRowsChanged(0); report("Edit the selected source's metadata, then return to Discover"); } catch (const std::exception& e) { report(juce::String::fromUTF8(e.what())); } }
     const juce::File& databaseFile() const { return database; }
     std::optional<Sample> currentSample() const { return selected; }
     void scan(const juce::File& directory) {

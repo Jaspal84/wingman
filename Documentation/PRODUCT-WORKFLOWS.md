@@ -1,5 +1,9 @@
 # Offline product workflows (0.3 development)
 
+For the current 0.4 default three-column UI and separate tabs, read
+[Create workspace](CREATE-WORKSPACE.md). This document retains the earlier
+checkpoint controls and product limitations as background.
+
 This extends Milestone A; it is not feature parity with a finished commercial
 workstation. All audio comes from user-imported licensed files or explicitly
 labelled original guitar synthesis. No commercial catalogue, ML classifier,

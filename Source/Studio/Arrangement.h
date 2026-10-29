@@ -82,7 +82,7 @@ struct Region {
     double fadeIn = 0, fadeOut = 0, speed = 1;
     bool reverse = false;
 };
-struct Lane { std::vector<Region> clips; float gain = .8f, pan = 0; bool mute = false, solo = false; Effects effects; };
+struct Lane { juce::String name; std::vector<Region> clips; float gain = .8f, pan = 0; bool mute = false, solo = false; Effects effects; };
 struct Arrangement {
     std::array<Lane, 8> lanes;
     double bpm = 120, loopStart = 0, loopEnd = 16;
@@ -237,7 +237,7 @@ inline juce::Result saveArrangement(const juce::File& file, const Arrangement& a
     root.setProperty("bpm", a.bpm, nullptr); root.setProperty("loop", a.loop, nullptr);
     root.setProperty("loopStart", a.loopStart, nullptr); root.setProperty("loopEnd", a.loopEnd, nullptr);
     for (const auto& lane : a.lanes) {
-        juce::ValueTree t("Track"); t.setProperty("gain", lane.gain, nullptr); t.setProperty("pan", lane.pan, nullptr);
+        juce::ValueTree t("Track"); t.setProperty("name", lane.name.substring(0, 64), nullptr); t.setProperty("gain", lane.gain, nullptr); t.setProperty("pan", lane.pan, nullptr);
         t.setProperty("mute", lane.mute, nullptr); t.setProperty("solo", lane.solo, nullptr);
         juce::Array<juce::var> effects; for (std::size_t i = 0; i < 11; ++i) { effects.add(lane.effects.enabled[i]); effects.add(lane.effects.amount[i]); } t.setProperty("effects", juce::JSON::toString(effects, true), nullptr);
         for (const auto& c : lane.clips) {
@@ -270,6 +270,7 @@ inline juce::Result loadArrangement(const juce::File& file, Arrangement& destina
     for (int i = 0; i < 8; ++i) {
         auto t = root.getChild(i); auto& lane = next.lanes[static_cast<std::size_t>(i)];
         if (!t.hasType("Track")) return juce::Result::fail("Invalid track");
+        lane.name = t["name"].toString().substring(0, 64);
         lane.gain = t["gain"]; lane.pan = t["pan"]; lane.mute = t["mute"]; lane.solo = t["solo"];
         if (!std::isfinite(lane.gain) || lane.gain < 0 || lane.gain > 1 || !std::isfinite(lane.pan) || std::abs(lane.pan) > 1)
             return juce::Result::fail("Invalid mixer");

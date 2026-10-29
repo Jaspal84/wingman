@@ -27,8 +27,8 @@ if [[ -n ${JASPRO_CODESIGN_IDENTITY:-} ]]; then
   codesign --force --options runtime --timestamp --sign "$JASPRO_CODESIGN_IDENTITY" "$stage/Jas PRO Ultimate Loop Studio.app"
   codesign --verify --deep --strict "$stage/Jas PRO Ultimate Loop Studio.app"
 fi
-package="$output/JasProStudio-arm64-0.3.0.pkg"
-args=(--component "$stage/Jas PRO Ultimate Loop Studio.app" --install-location /Applications --identifier com.wingmanaudio.jaspro.studio --version 0.3.0)
+package="$output/JasProStudio-arm64-0.4.0.pkg"
+args=(--component "$stage/Jas PRO Ultimate Loop Studio.app" --install-location /Applications --identifier com.wingmanaudio.jaspro.studio --version 0.4.0)
 if [[ -n ${JASPRO_INSTALLER_IDENTITY:-} ]]; then args+=(--sign "$JASPRO_INSTALLER_IDENTITY"); fi
 pkgbuild "${args[@]}" "$package"
 printf '%s\n' "Created $package" 'This package has not been notarized. Validate it and the application on the target Mac before distribution.'

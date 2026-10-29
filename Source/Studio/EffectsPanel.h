@@ -38,7 +38,7 @@ public:
     }
     void paint(juce::Graphics& g) override {
         g.fillAll(juce::Colour(0xff161e2a)); g.setColour(juce::Colours::lightgrey); g.setFont(13); g.drawText("TRACK EFFECTS / identical processing path for timeline playback and WAV bounce", 470, 20, getWidth() - 490, 30, juce::Justification::left);
-        int cell = (getWidth() - 40) / 8; for (int i = 0; i < 8; ++i) { int x = 20 + i * cell; float peak = meters[static_cast<std::size_t>(i)]; g.setColour(juce::Colour(0xff0a111a)); g.fillRect(x, 495, cell - 12, 28); g.setColour(peak > 1 ? juce::Colours::orange : juce::Colour(0xff69d7ab)); g.fillRect(x, 495, static_cast<int>((cell - 12) * std::min(1.f, peak)), 28); g.setColour(juce::Colours::white); g.drawText("T" + juce::String(i + 1) + " " + juce::String(juce::Decibels::gainToDecibels(peak, -90.f), 1) + " dB", x, 528, cell - 12, 22, juce::Justification::left); }
+        int cell = (getWidth() - 40) / 8; for (int i = 0; i < 8; ++i) { int x = 20 + i * cell; float peak = meters[static_cast<std::size_t>(i)]; g.setColour(juce::Colour(0xff0a111a)); g.fillRect(x, std::max(430, getHeight() - 130), cell - 12, 28); g.setColour(peak > 1 ? juce::Colours::orange : juce::Colour(0xff69d7ab)); g.fillRect(x, std::max(430, getHeight() - 130), static_cast<int>((cell - 12) * std::min(1.f, peak)), 28); g.setColour(juce::Colours::white); g.drawText("T" + juce::String(i + 1) + " " + juce::String(juce::Decibels::gainToDecibels(peak, -90.f), 1) + " dB", x, std::max(430, getHeight() - 130) + 33, cell - 12, 22, juce::Justification::left); }
     }
 };
 }

@@ -1,5 +1,7 @@
 # Native Apple Silicon build, package and acceptance
 
+See [current Create workspace and M1 steps](CREATE-WORKSPACE.md) for the 0.4 UI workflow.
+
 No Mac package was built in Linux. The native build and packaging procedure below
 requires macOS, Xcode Command Line Tools and a physical Apple Silicon machine.
 
@@ -33,7 +35,7 @@ The script builds Release arm64, verifies the architecture and system-only dylib
 `pkgbuild` for `/Applications/Jas PRO Ultimate Loop Studio.app`. It never installs
 the package or overwrites the build artefact. Running the installer can replace an
 installed Jas PRO Studio app; retain your prior app before testing it. The package
-identifier is `com.wingmanaudio.jaspro.studio`, version 0.3.0. On a multi-config
+identifier is `com.wingmanaudio.jaspro.studio`, version 0.4.0. On a multi-config
 build, the script passes `--config Release`.
 
 Signing is optional and owner controlled. To sign, supply your available keychain
