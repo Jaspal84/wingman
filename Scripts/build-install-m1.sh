@@ -21,7 +21,7 @@ WINGMAN_ARCHS=arm64 ./Scripts/build-macos.sh \
   2>&1 | tee build-macos/validation/build-tests.log
 component='build-macos/Wingman_artefacts/Release/AU/JASWINGMAN PRO.component'
 executable="$component/Contents/MacOS/JASWINGMAN PRO"
-/usr/bin/lipo -verify_arch arm64 "$executable"
+/usr/bin/lipo "$executable" -verify_arch arm64
 ./Scripts/install-macos.sh "$component" --adhoc \
   2>&1 | tee build-macos/validation/install.log
 installed="$HOME/Library/Audio/Plug-Ins/Components/JASWINGMAN PRO.component"

@@ -17,7 +17,7 @@ if [[ ! -x "$wingman_executable" ]]; then
 fi
 /usr/bin/lipo -archs "$wingman_executable"
 if [[ "${WINGMAN_ARCHS:-arm64}" == *arm64* ]]; then
-  /usr/bin/lipo -verify_arch arm64 "$wingman_executable"
+  /usr/bin/lipo "$wingman_executable" -verify_arch arm64
 fi
 ctest --test-dir build-macos --output-on-failure
 printf 'Builds are under build-macos/Wingman_artefacts/Release/\n'
